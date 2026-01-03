@@ -183,31 +183,46 @@ setCatchHandler(async ({ request, url }) => {
   try {
     switch (destination) {
       case 'document': {
-        // For HTML pages, try multiple strategies to find the cached homepage
-        
-        // 1. First, try to match from any cache (including precache) using the request
+        // For HTML pages, prioritize finding the cached homepage (card page)
+        // We want to show the card, NOT the offline page
+  
+        // Try multiple cache matching strategies
         let cachedHomepage = await caches.match(request) || 
                             await caches.match('/') ||
-                            await caches.match(url.pathname);
-        
+                            await caches.match(new Request('/', { method: 'GET' }));
+
+        // Try runtime cache
+        if (!cachedHomepage) {
+          const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+          cachedHomepage = await pagesCache.match('/') || 
+          await pagesCache.match(request);
+        }
+
+        // Try all caches for homepage
+        if (!cachedHomepage) {
+          const cacheNames = await caches.keys();
+          for (const cacheName of cacheNames) {
+            const cache = await caches.open(cacheName);
+            cachedHomepage = await cache.match('/');
+            if (cachedHomepage) break;
+          }
+        }
+
+        // Return homepage if found, otherwise return simple loading page
+        // DO NOT serve the offline page - user wants to see the card
         if (cachedHomepage) return cachedHomepage;
-        
-        // 2. Try runtime cache explicitly
-        const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
-        cachedHomepage = await pagesCache.match('/') || 
-                        await pagesCache.match(request);
-        
-        if (cachedHomepage) return cachedHomepage;
-        
-        // 3. Only fallback to offline page if homepage truly isn't cached
-        const offlineHtml = await caches.match(FALLBACK_HTML_URL);
-        if (offlineHtml) return offlineHtml;
-        
-        // 4. Last resort - simple HTML response
+
+        // Return a simple loading page instead of offline page
         return new Response(
-          '<h1>You are offline</h1><p>Please check your connection.</p>',
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Loading</title></head><body><h1>Loading application...</h1></body></html>',
           { headers: { 'Content-Type': 'text/html' } }
         );
+        
+        // 4. Last resort - simple HTML response
+        // return new Response(
+        //   '<h1>You are offline</h1><p>Please check your connection.</p>',
+        //   { headers: { 'Content-Type': 'text/html' } }
+        // );
       }
 
       case 'image': {
@@ -253,5 +268,3 @@ setCatchHandler(async ({ request, url }) => {
     return Response.error();
   }
 });
-
-
