@@ -1,0 +1,13 @@
+@use "tailwindcss";
+
+.prompt-window-block {
+  @apply fixed;
+  @apply top-[0] left-[0] p-[1rem] z-[1000];
+  @apply text-center max-w-[90%] w-[350px];
+  @apply bg-white rounded-lg;
+}
+
+.buttons-block {
+  @apply flex flex-wrap items-center justify-center gap-[var(--gap)];
+  @apply mt-[15px];
+}

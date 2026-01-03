@@ -1,0 +1,28 @@
+# Defining what image we want to build from
+# (this image comes with Node.js and NPM already installed)
+FROM node:lts-alpine AS build
+
+# Creating a directory to hold the application source code inside the image
+WORKDIR /app
+
+# Copying package.json and package-lock.json files in source files directory.
+# A wildcard (*) is used to ensure both package.json AND package-lock.json are copied.
+# When using npm version 4 or earlier a package-lock.json file will not be generated.
+COPY package*.json ./
+
+# Installing app dependencies and cleaning npm cache
+RUN npm install && npm cache clean --force
+
+# Copying the rest files in source files directory
+COPY . .
+
+EXPOSE 3000
+
+# starting application in development mode
+CMD npm run dev
+
+# Increase Node.js memory limit
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+
+# starting application in development mode
+CMD npm run dev

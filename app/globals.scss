@@ -1,0 +1,111 @@
+@use "tailwindcss";
+
+// SCSS Color Variables
+$background: #f4f6f7;
+$background-light: rgb(250 250 250); // zinc-50 in tailwind
+$foreground: #132356;
+$primary: #1E338D;
+$white: #FFFFFF;
+$primary-btn: #132356;
+$primary-btn-hover: $primary;
+$disabled: #9ca3af;
+$error: rgb(234 88 12); // orange-600 in tailwind
+
+// Font
+$font-family-sans-serif: "Open Sans", sans-serif;
+
+// CSS Custom Properties (for theme system)
+:root {
+  --background: #{$background};
+  --background-light: #{$background-light};
+  --foreground: #{$foreground};
+  --font-size-paragraph-l:  18px;
+  --font-size-paragraph-m:  16px;
+  --font-size-paragraph-s:  14px;
+  --font-size-paragraph-xs: 12px;
+  --nav-link-border-color: #D2D6E8;
+  --gap: 16px;
+}
+
+@theme inline {
+  --color-background: $background;
+  --color-foreground: $foreground;
+  --font-sans: var(--font-open-sans);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  @apply w-screen h-screen;
+}
+
+body {
+  @apply w-full h-full;
+  @apply flex flex-col flex-nowrap;
+  background: $background;
+  color: $foreground;
+  font-family: var(--font-open-sans), sans-serif;
+  font-size: var(--font-size-paragraph-l);
+
+  @media (max-width: 640px) {
+    background-color: rgb(250 250 250);
+  }
+}
+
+.error {
+ color: $error; 
+}
+
+.btn {
+  min-height: 43px;
+  font-weight: 700;
+  border-radius: 2.275rem;
+  color: $white;
+  background: $primary-btn;
+  border-color: $primary-btn;
+  gap: 8px;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid transparent;
+  padding: 0.9rem 1.3rem;
+  box-shadow: none !important;
+  line-height: 1.465rem;
+
+  &:hover, &:focus, &:active {
+    background: $primary-btn-hover;
+    border-color: $primary-btn-hover;
+  }
+
+  &.btn-sm {
+    min-height: 32px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  &.btn-default {
+    color: $primary;
+    background-color: $white;
+    border-color: var(--nav-link-border-color);
+    font-weight: 400;
+
+    &:not(:disabled):not(.disabled) {
+      &:hover {
+        color: $primary;
+        border-color: $primary;
+      }
+    }
+
+    &:disabled,
+    &.disabled {
+      cursor: default;
+      color: $disabled;
+      opacity: 0.6;
+    }
+  }
+}

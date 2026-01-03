@@ -1,0 +1,270 @@
+@use "tailwindcss";
+
+// SCSS Variables
+$image-border-radius: 7%;
+$shadow-size: 2xl;
+$transition-duration: 0.3s;
+
+// Color variables
+$foreground-card-front: #293373;
+$foreground-card-back: #132356;
+$error-color: rgb(220 38 38); // red-600 in tailwind
+
+// Font variables
+$message-font-weight: 700; // bold in tailwind
+$message-font-size: 1rem; // base in tailwind
+$card-text-font-base: 1em;
+$card-text-font-xs: 3vw;
+$card-text-font-sm: 3vw;
+$card-text-font-weight: 500; // medium in tailwind
+$card-text-face-font-weight: 600; // semibold in tailwind
+
+// Size & spacing variables
+$card-padding: 1rem; // p-4 in tailwind
+$card-width-sm: 40rem;
+$country-flag-width: 2rem;
+$country-flag-height: 1rem;
+$country-flag-width-xs: 4.3vw;
+$country-flag-height-xs: 2.2vw;
+$country-flag-width-sm: 5vw;
+$country-flag-height-sm: 2.6vw;
+$national-sign-size: 3.3rem;
+$national-sign-size-xs: 7.5vw;
+$national-sign-size-sm: 8.3vw;
+
+@mixin flex-center($direction: row) {
+  @apply flex justify-center items-center;
+  flex-direction: $direction;
+}
+
+@mixin absolute-position($top: null, $right: null, $bottom: null, $left: null) {
+  @apply absolute;
+  @if $top { top: $top; }
+  @if $right { right: $right; }
+  @if $bottom { bottom: $bottom; }
+  @if $left { left: $left; }
+}
+
+@mixin card-image {
+  @apply bg-cover bg-no-repeat bg-center;
+}
+
+@mixin card-text-base {
+  @apply absolute;
+  @apply leading-[1] h-[4.5%];
+  font-size: $card-text-font-base;
+  font-weight: $card-text-font-weight;
+}
+
+// ---------------------------
+
+main {
+  @apply w-full h-full;
+  @apply bg-inherit;
+}
+
+.outer-card-container {
+  @apply w-full;
+  height: auto;
+  min-height: 360px;
+  @include flex-center(column);
+  @apply bg-inherit;
+  @apply p-4;
+}
+
+.inner-card-container {
+  @apply w-full h-full max-w-full;
+  @apply flex items-start flex-col flex-nowrap gap-4;
+  @apply bg-inherit;
+  background-color: var(--background-light);
+
+  @media (min-width: 640px) {
+    width: $card-width-sm;
+    @apply py-4 px-8;
+    border-radius: $image-border-radius;
+  }
+}
+
+.card-title {
+  @apply flex flex-row flex-nowrap items-center gap-[var(--gap)];
+  @apply font-bold;
+  font-size: calc(var(--font-size-paragraph-l) * 2);
+
+  @media (max-width: 640px) {
+    font-size: calc(var(--font-size-paragraph-s) * 2);
+  }
+
+  img {
+    width: 80px;
+    height: 60px;
+    max-width: none;
+
+    @media (max-width: 640px) {
+      width: 56px;
+      height: 42px;
+    }
+  }
+}
+
+.app-buttons-block {
+  @apply flex flex-row flex-wrap items-center justify-start gap-[var(--gap)] mt-4;
+}
+
+.messages-block {
+  @apply w-full;
+}
+
+.card {
+  @apply w-full max-w-full;
+  @apply relative;
+  @apply flex items-start justify-center;
+  transform-style: preserve-3d;
+  transition: transform $transition-duration;
+  @apply bg-inherit;
+  //@apply rounded-xl;
+  border-radius: $image-border-radius;
+}
+
+.card-face {
+  // Make card-face RELATIVE so it defines parent height
+  @apply relative;
+  border-radius: $image-border-radius;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  @apply backface-hidden;
+  color: $foreground_card_back;
+  width: 100%;
+
+  .image {
+    @apply block w-full h-auto;
+    border-radius: $image-border-radius;
+  }
+}
+
+.card-back {
+  // Keep card-back ABSOLUTE - it overlays the front
+  @apply absolute backface-hidden;
+  border-radius: $image-border-radius;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  color: $foreground_card_back;
+  
+  // Same position as card-face on all screens
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  .image {
+    @apply block w-full h-auto;
+    border-radius: $image-border-radius;
+  }
+}
+
+.card-face, .card-back {
+  .front-card-image {
+    @include card-image;
+    @include absolute-position($top: 30%, $left: 5%);
+    @apply w-[22%] h-[52%];
+  }
+
+  .back-card-image {
+    @include card-image;
+    @include absolute-position($top: 10%, $left: 70.5%);
+    @apply w-[23%] h-[47%];
+    border-radius: $image-border-radius;
+  }
+
+  .card-text {
+    @include card-text-base;
+    
+    @media (max-width: 640px) {
+      font-size: $card-text-font-sm;
+    }
+    @media (max-width: 320px) {
+      font-size: $card-text-font-xs;
+    }
+  }
+
+  .card-isia-code {
+    @include absolute-position($bottom: 54.5%, $left: 42%);
+    font-weight: $card-text-face-font-weight;
+  }
+
+  .card-expiration-date {
+    @include absolute-position($bottom: 5.5%, $left: 5.5%);
+    font-weight: $card-text-face-font-weight;
+  }
+
+  .card-owner-name {
+    @include absolute-position($bottom: 60%, $left: 19%);
+  }
+
+  .card-owner-title {
+    @include absolute-position($bottom: 51%, $left: 19%);
+  }
+
+  .card-owner-country-flag {
+    @include card-image;
+    @include absolute-position($bottom: 35%, $left: 7.5%);
+    width: $country-flag-width;
+    height: $country-flag-height;
+
+    @media (max-width: 640px) {
+      width: $country-flag-width-sm;
+      height: $country-flag-height-sm;
+    }
+    @media (max-width: 320px) {
+      width: $country-flag-width-xs;
+      height: $country-flag-height-xs;
+    }
+  }
+
+  .card-owner-country-code {
+    @include absolute-position($bottom: 35.5%, $left: 29%);
+  }
+
+  .card-owner-association {
+    @include absolute-position($bottom: 19.5%, $left: 7.5%);
+  }
+
+  .card-owner-membershipno {
+    @include absolute-position($bottom: 11%, $left: 32%);
+  }
+
+  .card-owner-website {
+    @include absolute-position($bottom: 11%, $left: 50%);
+  }
+
+  .card-owner-national-sign {
+    @include card-image;
+    @include absolute-position($bottom: 26%, $left: 71%);
+    width: $national-sign-size;
+    height: $national-sign-size;
+
+    @media (max-width: 640px) {
+      width: $national-sign-size-sm;
+      height: $national-sign-size-sm;
+    }
+    @media (max-width: 320px) {
+      width: $national-sign-size-xs;
+      height: $national-sign-size-xs;
+    }
+  }
+}
+
+.load-data-status-panel {
+  @include absolute-position();
+  @apply w-full h-full;
+  @apply bg-inherit opacity-[0.7] z-[1000];
+  @include flex-center();
+  border-radius: $image-border-radius;
+}
+
+.loading-data-message {
+  font-weight: $message-font-weight;
+  font-size: $message-font-size;
+  @apply text-center bg-white;
+}
+
+.error-status-panel {
+  @include flex-center();
+}

@@ -1,0 +1,257 @@
+/// <reference lib="webworker" />
+
+// The previous line tells the compiler to include the "webworker" library types.
+// How it works:
+// - TypeScript assumes code runs in a DOM context (window, document, etc.).
+// - Service workers run in a Worker context, not a Window context.
+// - The lib="webworker" directive tells TypeScript to use Worker types instead of DOM types
+//   (without it, TypeScript may not recognize: self (ServiceWorkerGlobalScope), caches (CacheStorage API),
+//   clients (Clients API), skipWaiting(), clients.claim(), addEventListener for service worker events, ...).
+
+import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
+import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
+import {
+  CACHE_VERSION,
+  FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
+  PRECACHED_JS_FILES, DESTINATION_TYPE, IMAGE_API_ENDPOINTS,
+  NETWORK_TIMEOUT_SECONDS,
+} from './constants';
+import { runtimeCachesConfig } from './runtimeCachesConfig';
+import { setupActivateHandler } from './activateHandler';
+import { setupMessageHandler } from './messageHandler';
+
+declare const self: ServiceWorkerGlobalScope;
+
+// Set up activate event handler
+setupActivateHandler();
+
+// Set up message event handler
+setupMessageHandler();
+
+// Clean up old caches (with prefix workbox-precache) - runs on service worker activation.
+// It does not delete runtime caches
+cleanupOutdatedCaches();
+
+// Precache essential resources
+// (caching files in 'install' event handler of service-worker)
+precacheAndRoute([
+  { url: '/', revision: `main-${CACHE_VERSION}` },
+  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
+  ...PRECACHED_IMAGES.map((imgData) => ({
+    url: imgData.url,
+    revision: `${imgData.shortDescription}-${CACHE_VERSION}`,
+  })),
+  ...PRECACHED_JS_FILES.map((jsData) => ({
+    url: jsData.url,
+    revision: jsData.revision || CACHE_VERSION,
+  })),
+], {
+  // Ignore all URL parameters
+  ignoreURLParametersMatching: [/.*/],
+});
+
+// HTML PAGES - Cache with NetworkFirst strategy
+registerRoute(
+  ({ request }) => request.mode === 'navigate',
+  new NetworkFirst({
+    cacheName: runtimeCachesConfig.pages.name,
+    // Fall back to cache after given number of seconds if offline
+    networkTimeoutSeconds: NETWORK_TIMEOUT_SECONDS,
+    plugins: [
+      // Only requests that return with a 200 status are cached
+      new CacheableResponsePlugin({ statuses: [200] }),
+      // Cache expiration rules
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.pages.maxEntries,
+        //maxAgeSeconds: runtimeCachesConfig.pages.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
+      }),
+    ],
+  })
+);
+
+// SCRIPTS, STYLES - Cache with StaleWhileRevalidate strategy
+registerRoute(
+  ({ request, url }) => {
+    const isScriptOrStyle = request.destination === DESTINATION_TYPE.SCRIPT ||
+                            // !!! CSS files don't always have request.destination === 'style'
+                            request.destination === DESTINATION_TYPE.STYLE;
+    
+    // Match Next.js static assets (CSS/JS files)
+    const isNextStaticAsset = url.pathname.startsWith('/_next/static/');
+
+    // Explicitly match CSS files by extension or Content-Type
+    const isCSSFile = url.pathname.endsWith('.css') || 
+                     request.headers.get('accept')?.includes('text/css') ||
+                     url.pathname.includes('/_next/static/css/');
+
+    // Match JS files explicitly
+    const isJSFile = url.pathname.endsWith('.js') || 
+                    url.pathname.endsWith('.mjs') ||
+                    url.pathname.includes('/_next/static/chunks/');
+    
+    // Exclude precached files
+    const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
+    
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+  },
+  // Why cache first?
+  // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
+  // filenames), CacheFirst is more appropriate:
+  // - Next.js static assets have unique filenames per version
+  // - Old versions won't be requested after an update
+  // - Better offline reliability for PWA
+  // - Faster (no background revalidation)
+  new CacheFirst({
+    cacheName: runtimeCachesConfig.static.name,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.static.maxEntries,
+        maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year - safe because Next.js uses content hashing
+      }),
+    ],
+  })
+);
+
+// IMAGES - Cache with CacheFirst strategy
+registerRoute(
+  ({ request, url }) => 
+    request.destination === DESTINATION_TYPE.IMAGE &&
+    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
+  new CacheFirst({
+    cacheName: runtimeCachesConfig.images.name,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.images.maxEntries }),
+    ],
+  })
+);
+
+// IMAGE API ENDPOINTS - Cache with CacheFirst strategy
+registerRoute(
+  ({ url }) => IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint)),
+  new CacheFirst({
+    cacheName: runtimeCachesConfig.images.name,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.images.maxEntries }),
+    ],
+  })
+);
+
+// API - Cache with NetworkFirst strategy (exclude image API endpoints)
+registerRoute(
+  ({ url }) => 
+    url.pathname.startsWith('/api/') &&
+    !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint)),
+  new NetworkFirst({
+    cacheName: runtimeCachesConfig.api.name,
+    // Fall back to cache after given number of seconds if offline
+    networkTimeoutSeconds: NETWORK_TIMEOUT_SECONDS,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200, 304] }),
+      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.api.maxEntries }),
+    ],
+  })
+);
+
+// FONTS - Cache with CacheFirst strategy  
+registerRoute(
+  ({ request }) => request.destination === 'font',
+  new CacheFirst({
+    cacheName: runtimeCachesConfig.static.name,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: 20 }),
+    ],
+  })
+);
+
+// Default handler (must be AFTER all specific routes)
+setDefaultHandler(new NetworkOnly());
+
+// Global catch handler for failed requests
+setCatchHandler(async ({ request, url }) => {
+  console.warn('Request failed:', request.url);
+
+  const destination = request.destination;
+
+  try {
+    switch (destination) {
+      case 'document': {
+        // For HTML pages, try multiple strategies to find the cached homepage
+        
+        // 1. First, try to match from any cache (including precache) using the request
+        let cachedHomepage = await caches.match(request) || 
+                            await caches.match('/') ||
+                            await caches.match(url.pathname);
+        
+        if (cachedHomepage) return cachedHomepage;
+        
+        // 2. Try runtime cache explicitly
+        const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+        cachedHomepage = await pagesCache.match('/') || 
+                        await pagesCache.match(request);
+        
+        if (cachedHomepage) return cachedHomepage;
+        
+        // 3. Only fallback to offline page if homepage truly isn't cached
+        const offlineHtml = await caches.match(FALLBACK_HTML_URL);
+        if (offlineHtml) return offlineHtml;
+        
+        // 4. Last resort - simple HTML response
+        return new Response(
+          '<h1>You are offline</h1><p>Please check your connection.</p>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
+      }
+
+      case 'image': {
+        const fallbackImage = await caches.match(FALLBACK_IMG);
+        if (fallbackImage) return fallbackImage;
+        return new Response(
+          '<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#ccc"/><text x="50" y="50" text-anchor="middle">No Image</text></svg>',
+          { headers: { 'Content-Type': 'image/svg+xml' } }
+        );
+      }
+
+      case 'style':
+        // Try runtime cache with multiple matching strategies
+        const staticCache = await caches.open(runtimeCachesConfig.static.name);
+        let cachedStyle = await staticCache.match(request) ||
+                          await staticCache.match(url.pathname) ||
+                          await staticCache.match(request, { ignoreSearch: true });
+        if (cachedStyle) return cachedStyle;
+        // Return empty CSS as last resort (better than error for styles)
+        return new Response('/* Styles unavailable offline */', { 
+          headers: { 'Content-Type': 'text/css' } 
+        });
+
+      case 'script':
+        // Try to get from cache one more time
+        const staticCacheForScript = await caches.open(runtimeCachesConfig.static.name);
+        const cachedScript = await staticCacheForScript.match(request);
+        if (cachedScript) return cachedScript;
+        return Response.error();
+
+      case 'font':
+        return Response.error();
+
+      default: {
+        // Don't handle API calls here - NetworkFirst strategy should handle them
+        // If NetworkFirst fails, it means the data isn't cached and network is unavailable
+        // Returning Response.error() will cause the fetch to fail, which the app can handle
+        return Response.error();
+      }
+    }
+  } catch (error) {
+    console.error('Catch handler failed:', error);
+    return Response.error();
+  }
+});
+
+

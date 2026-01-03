@@ -1,0 +1,18 @@
+services:
+  dev:
+    container_name: isia-card
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    restart: always
+    ports:
+      - 3000:3000
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+    expose:
+      - 3000
+    stdin_open: true
+
+volumes:
+  node-modules:

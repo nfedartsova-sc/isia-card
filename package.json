@@ -1,0 +1,46 @@
+{
+  "name": "isia-card",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:sw": "node scripts/build-sw.mjs",
+    "build:sw:dev": "node scripts/build-sw.mjs --dev",
+    "dev": "npm run build:sw:dev && next dev -H 0.0.0.0 --experimental-https",
+    "build": "npm run build:sw && next build",
+    "start": "next start",
+    "docker:up:build:dev": "docker compose -f docker-compose.dev.yml up --build",
+    "docker:up:dev": "docker compose -f docker-compose.dev.yml up",
+    "docker:up:build:prod": "docker compose -f docker-compose.prod.yml up --build",
+    "docker:up:prod": "docker compose -f docker-compose.prod.yml up",
+    "docker:stop:dev": "docker compose -f docker-compose.dev.yml stop",
+    "docker:stop:prod": "docker compose -f docker-compose.prod.yml stop",
+    "docker:down:dev": "docker compose -f docker-compose.dev.yml down",
+    "docker:down:prod": "docker compose -f docker-compose.prod.yml down",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "next": "^16.0.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "register-service-worker": "^1.7.2",
+    "workbox-cacheable-response": "^7.4.0",
+    "workbox-core": "^7.4.0",
+    "workbox-expiration": "^7.4.0",
+    "workbox-precaching": "^7.4.0",
+    "workbox-routing": "^7.4.0",
+    "workbox-strategies": "^7.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "esbuild": "^0.27.2",
+    "eslint": "^9",
+    "eslint-config-next": "^16.0.4",
+    "sass": "^1.94.2",
+    "serwist": "^9.2.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
