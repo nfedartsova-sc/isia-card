@@ -185,7 +185,7 @@ registerRoute(
 setDefaultHandler(new NetworkOnly());
 
 // Global catch handler for failed requests
-setCatchHandler(async ({ request, url }) => {
+setCatchHandler(async ({ request, url }): Promise<Response> => {
   console.warn('[SW] Catch handler triggered for:', request.url, 'destination:', request.destination);
 
   const destination = request.destination;
