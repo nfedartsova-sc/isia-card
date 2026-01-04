@@ -169,7 +169,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
               isResolved = true;
               addMessage({ 
                 message: { 
-                  type: 'warning', 
+                  type: 'info', 
                   text: `Database ${db.name} deletion timed out after ${MAX_WAIT_MS}ms. It may still be deleting in the background.`, 
                   level: 'debug' 
                 } 
