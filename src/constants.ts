@@ -1,5 +1,5 @@
 // Version for cache management
-export const CACHE_VERSION = 'v1.0.128';
+export const CACHE_VERSION = 'v1.0.130';
 
 export const FALLBACK_HTML_URL = '/offline';
 export const FALLBACK_IMG = '/images/fallback-image.jpg';
@@ -23,4 +23,4 @@ export const IMAGE_API_ENDPOINTS = [
 ];
 export const CLEAR_ORPHANED_INDEXEDDB_ATTEMPTS_NUMBER = 3;
 export const CLEAR_ORPHANED_INDEXEDDB_WAIT_INTERVAL_BETWEEN_ATTEMPS_MS = 100;
-export const NETWORK_TIMEOUT_SECONDS = 3;
+export const NETWORK_TIMEOUT_SECONDS = 5;
