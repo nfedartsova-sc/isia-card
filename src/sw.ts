@@ -197,8 +197,22 @@ setCatchHandler(async ({ request, url }) => {
         // We want to show the card, NOT the offline page
         console.log('[SW] Attempting to find cached homepage...');
   
+        // CRITICAL: Try to get the precached homepage first using the origin URL
+        const origin = url.origin;
+        const baseUrl = origin + '/';
         
-        // CRITICAL: For mobile, try multiple URL variations
+        // Method 1: Try matchPrecache with absolute URL
+        try {
+          const precached = await matchPrecache(baseUrl);
+          if (precached) {
+            console.log('[SW] Found in precache via absolute URL:', baseUrl);
+            return precached;
+          }
+        } catch (e) {
+          console.warn('[SW] matchPrecache with absolute URL failed:', e);
+        }
+        
+        // Method 2: Try matchPrecache with relative URL variations
         const urlVariations = [
           '/',
           url.pathname,
@@ -206,16 +220,19 @@ setCatchHandler(async ({ request, url }) => {
           url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname + '/',
         ];
         
-        // Method 1: Try matchPrecache for all URL variations
         for (const urlToTry of urlVariations) {
-          const precached = await matchPrecache(urlToTry);
-          if (precached) {
-            console.log('[SW] Found in precache via matchPrecache:', urlToTry);
-            return precached;
+          try {
+            const precached = await matchPrecache(urlToTry);
+            if (precached) {
+              console.log('[SW] Found in precache via matchPrecache:', urlToTry);
+              return precached;
+            }
+          } catch (e) {
+            // Continue to next variation
           }
         }
 
-        // Method 2: Use getCacheKeyForURL + direct cache access
+        // Method 3: Use getCacheKeyForURL + direct cache access
         for (const urlToTry of urlVariations) {
           try {
             const cacheKey = getCacheKeyForURL(urlToTry);
@@ -232,20 +249,43 @@ setCatchHandler(async ({ request, url }) => {
           }
         }
 
-        // Method 3: Direct cache matching (runtime cache)
+        // Method 4: Direct cache matching with Request objects (important for mobile)
         for (const urlToTry of urlVariations) {
-          const cached = await caches.match(urlToTry) || await caches.match(new Request(urlToTry));
-          if (cached) {
-            console.log('[SW] Found in direct cache match:', urlToTry);
-            return cached;
+          try {
+            // Try with relative URL
+            const cached1 = await caches.match(urlToTry);
+            if (cached1) {
+              console.log('[SW] Found via caches.match (relative):', urlToTry);
+              return cached1;
+            }
+            
+            // Try with absolute URL
+            const absoluteUrl = new URL(urlToTry, origin).href;
+            const cached2 = await caches.match(absoluteUrl);
+            if (cached2) {
+              console.log('[SW] Found via caches.match (absolute):', absoluteUrl);
+              return cached2;
+            }
+            
+            // Try with Request object
+            const requestObj = new Request(urlToTry, { mode: 'navigate' });
+            const cached3 = await caches.match(requestObj);
+            if (cached3) {
+              console.log('[SW] Found via caches.match (Request object):', urlToTry);
+              return cached3;
+            }
+          } catch (e) {
+            // Continue to next variation
           }
         }
 
-        // Method 4: Check runtime pages cache
+        // Method 5: Check runtime pages cache
         try {
           const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
           for (const urlToTry of urlVariations) {
-            const cached = await pagesCache.match(urlToTry) || await pagesCache.match(new Request(urlToTry));
+            const cached = await pagesCache.match(urlToTry) || 
+                          await pagesCache.match(new Request(urlToTry)) ||
+                          await pagesCache.match(new URL(urlToTry, origin).href);
             if (cached) {
               console.log('[SW] Found in pages runtime cache:', urlToTry);
               return cached;
@@ -255,7 +295,7 @@ setCatchHandler(async ({ request, url }) => {
           console.warn('[SW] Error accessing pages cache:', e);
         }
 
-        // Method 5: Search ALL caches comprehensively
+        // Method 6: Search ALL caches comprehensively with absolute URLs
         try {
           const cacheNamesList = await caches.keys();
           console.log('[SW] Available caches:', cacheNamesList);
@@ -263,11 +303,17 @@ setCatchHandler(async ({ request, url }) => {
           for (const cacheName of cacheNamesList) {
             const cache = await caches.open(cacheName);
             for (const urlToTry of urlVariations) {
-              const cached = await cache.match(urlToTry) ||
-                            await cache.match(new Request(urlToTry));
-              if (cached) {
+              // Try multiple matching strategies
+              const matches = [
+                await cache.match(urlToTry),
+                await cache.match(new Request(urlToTry)),
+                await cache.match(new URL(urlToTry, origin).href),
+                await cache.match(new Request(new URL(urlToTry, origin).href)),
+              ].filter(Boolean);
+              
+              if (matches.length > 0) {
                 console.log(`[SW] Found in cache ${cacheName}:`, urlToTry);
-                return cached;
+                return matches[0];
               }
             }
           }
@@ -282,6 +328,8 @@ setCatchHandler(async ({ request, url }) => {
           console.log('[SW] All precache keys:', precacheKeys.map(r => r.url));
           console.log('[SW] Request URL:', request.url);
           console.log('[SW] URL pathname:', url.pathname);
+          console.log('[SW] URL origin:', url.origin);
+          console.log('[SW] URL href:', url.href);
         } catch (e) {
           console.warn('[SW] Could not inspect precache:', e);
         }
@@ -289,10 +337,27 @@ setCatchHandler(async ({ request, url }) => {
         console.error('[SW] Could not find cached homepage anywhere');
         console.warn('[SW] Available caches:', await caches.keys());
 
-        // Return a simple loading page instead of offline page
+        // Last resort: Return the offline page instead of "Loading application..."
+        // This is better UX than an infinite loading message
+        try {
+          const offlinePage = await matchPrecache(FALLBACK_HTML_URL);
+          if (offlinePage) {
+            console.log('[SW] Serving offline page as fallback');
+            return offlinePage;
+          }
+        } catch (e) {
+          console.warn('[SW] Could not serve offline page:', e);
+        }
+
+        // If we can't even find the offline page, return a simple HTML response
         return new Response(
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Loading</title></head><body><h1>Loading application...</h1></body></html>',
-          { headers: { 'Content-Type': 'text/html' } }
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offline</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>You are offline</h1><p>Please check your connection and try again.</p></body></html>',
+          { 
+            headers: { 
+              'Content-Type': 'text/html',
+              'Cache-Control': 'no-cache'
+            } 
+          }
         );
         
         // 4. Last resort - simple HTML response
