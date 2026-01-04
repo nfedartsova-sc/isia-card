@@ -1,5 +1,5 @@
 // Version for cache management
-export const CACHE_VERSION = 'v1.0.127';
+export const CACHE_VERSION = 'v1.0.128';
 
 export const FALLBACK_HTML_URL = '/offline';
 export const FALLBACK_IMG = '/images/fallback-image.jpg';

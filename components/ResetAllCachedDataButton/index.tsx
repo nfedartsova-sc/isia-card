@@ -293,6 +293,12 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       setClearingCache(false);
       // Reload even on error to ensure fresh state. This ensures the app gets a fresh start.
       // Delay reload so user can see a message.
+      // if (reloadApp) {
+      //   setTimeout(() => {
+      //     window.location.reload();
+      //   }, 2000); // Reduced from 5 seconds to 2 seconds for better UX
+      // }
+      /*
       if (reloadApp) {
         // Preload critical resources before reloading
         // This ensures they're cached in runtime cache
@@ -301,6 +307,49 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
             '/',
             ...PRECACHED_IMAGES.map(imgData => imgData.url),
             ...PRECACHED_JS_FILES.map(jsData => jsData.url),
+          ];
+          
+          // Preload resources in parallel
+          await Promise.allSettled(
+            criticalResources.map(url => 
+              fetch(url, { cache: 'default' }).catch(() => {
+                // Ignore errors - resources might not be available
+              })
+            )
+          );
+          
+          addMessage({ 
+            message: { 
+              type: 'success', 
+              text: 'Critical resources preloaded', 
+              level: 'debug' 
+            } 
+          });
+        } catch (error) {
+          // Continue anyway - preloading is best effort
+          console.warn('Error preloading resources:', error);
+        }
+        
+        // Delay reload so user can see a message and resources can cache
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }*/
+
+        // Delay reload so user can see a message. This ensures the app gets a fresh start.
+      // Delay reload so user can see a message.
+      if (reloadApp) {
+        // Preload critical resources before reloading
+        // This ensures they're cached in runtime cache
+        try {
+          const criticalResources = [
+            '/',
+            ...PRECACHED_IMAGES.map(imgData => imgData.url),
+            ...PRECACHED_JS_FILES.map(jsData => jsData.url),
+            ISIA_CARD_DATA_ENDPOINT, // Preload card data API endpoint
+            '/api/isiaCardImage',    // Preload image API endpoints
+            '/api/nationalSign',
+            '/api/flag',
           ];
           
           // Preload resources in parallel
