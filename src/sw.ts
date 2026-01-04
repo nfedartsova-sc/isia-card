@@ -197,72 +197,91 @@ setCatchHandler(async ({ request, url }) => {
         // We want to show the card, NOT the offline page
         console.log('[SW] Attempting to find cached homepage...');
   
-        // Method 1: Use matchPrecache (Workbox's official API)
-        let cachedHomepage = await matchPrecache('/');
-        if (cachedHomepage) {
-          console.log('[SW] Found homepage in precache via matchPrecache');
-          return cachedHomepage;
+        
+        // CRITICAL: For mobile, try multiple URL variations
+        const urlVariations = [
+          '/',
+          url.pathname,
+          url.pathname === '/' ? '/' : url.pathname,
+          url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname + '/',
+        ];
+        
+        // Method 1: Try matchPrecache for all URL variations
+        for (const urlToTry of urlVariations) {
+          const precached = await matchPrecache(urlToTry);
+          if (precached) {
+            console.log('[SW] Found in precache via matchPrecache:', urlToTry);
+            return precached;
+          }
         }
 
         // Method 2: Use getCacheKeyForURL + direct cache access
-        try {
-          const cacheKey = getCacheKeyForURL('/');
-          if (cacheKey) {
-            console.log('[SW] Precache key for /:', cacheKey);
-            const precacheCache = await caches.open(cacheNames.precache);
-            cachedHomepage = await precacheCache.match(cacheKey);
-            if (cachedHomepage) {
-              console.log('[SW] Found homepage in precache via cacheKey');
-              return cachedHomepage;
+        for (const urlToTry of urlVariations) {
+          try {
+            const cacheKey = getCacheKeyForURL(urlToTry);
+            if (cacheKey) {
+              const precacheCache = await caches.open(cacheNames.precache);
+              const cached = await precacheCache.match(cacheKey);
+              if (cached) {
+                console.log('[SW] Found in precache via cacheKey:', urlToTry);
+                return cached;
+              }
             }
+          } catch (e) {
+            // Continue to next variation
           }
-        } catch (e) {
-          console.warn('[SW] Error accessing precache:', e);
         }
 
-        // Method 3: Try direct cache matching (for runtime cache)
-        cachedHomepage = await caches.match('/') || await caches.match(request);
-        if (cachedHomepage) {
-          console.log('[SW] Found homepage in direct cache match');
-          return cachedHomepage;
+        // Method 3: Direct cache matching (runtime cache)
+        for (const urlToTry of urlVariations) {
+          const cached = await caches.match(urlToTry) || await caches.match(new Request(urlToTry));
+          if (cached) {
+            console.log('[SW] Found in direct cache match:', urlToTry);
+            return cached;
+          }
         }
 
         // Method 4: Check runtime pages cache
         try {
           const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
-          cachedHomepage = await pagesCache.match('/') || await pagesCache.match(request);
-          if (cachedHomepage) {
-            console.log('[SW] Found homepage in pages runtime cache');
-            return cachedHomepage;
+          for (const urlToTry of urlVariations) {
+            const cached = await pagesCache.match(urlToTry) || await pagesCache.match(new Request(urlToTry));
+            if (cached) {
+              console.log('[SW] Found in pages runtime cache:', urlToTry);
+              return cached;
+            }
           }
         } catch (e) {
           console.warn('[SW] Error accessing pages cache:', e);
         }
 
-        // Method 5: Search ALL caches (comprehensive fallback)
+        // Method 5: Search ALL caches comprehensively
         try {
           const cacheNamesList = await caches.keys();
           console.log('[SW] Available caches:', cacheNamesList);
           
           for (const cacheName of cacheNamesList) {
             const cache = await caches.open(cacheName);
-            cachedHomepage = await cache.match('/') ||
-                            await cache.match(request) ||
-                            await cache.match(new Request('/', { method: 'GET' }));
-            if (cachedHomepage) {
-              console.log(`[SW] Found homepage in cache: ${cacheName}`);
-              return cachedHomepage;
+            for (const urlToTry of urlVariations) {
+              const cached = await cache.match(urlToTry) ||
+                            await cache.match(new Request(urlToTry));
+              if (cached) {
+                console.log(`[SW] Found in cache ${cacheName}:`, urlToTry);
+                return cached;
+              }
             }
           }
         } catch (e) {
           console.warn('[SW] Error searching all caches:', e);
         }
 
-        // Debug: Log what's actually in the precache
+        // Debug: Log precache contents
         try {
           const precacheCache = await caches.open(cacheNames.precache);
           const precacheKeys = await precacheCache.keys();
-          console.log('[SW] Precache keys:', precacheKeys.map(r => r.url));
+          console.log('[SW] All precache keys:', precacheKeys.map(r => r.url));
+          console.log('[SW] Request URL:', request.url);
+          console.log('[SW] URL pathname:', url.pathname);
         } catch (e) {
           console.warn('[SW] Could not inspect precache:', e);
         }
