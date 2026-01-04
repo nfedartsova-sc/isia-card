@@ -42,22 +42,12 @@ setupMessageHandler();
 // It does not delete runtime caches
 cleanupOutdatedCaches();
 
-// Precache resources BUT don't route homepage through precache
-// Only precache it for offline fallback in catch handler
+// Precache homepage for offline fallback (but don't auto-route it)
 precache([
-  { url: '/', revision: `main-${CACHE_VERSION}` }, // Precache but don't auto-route
-  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
-  ...PRECACHED_IMAGES.map((imgData) => ({
-    url: imgData.url,
-    revision: null,
-  })),
-  ...PRECACHED_JS_FILES.map((jsData) => ({
-    url: jsData.url,
-    revision: jsData.revision || null,
-  })),
+  { url: '/', revision: `main-${CACHE_VERSION}` },
 ]);
 
-// Precache essential resources
+// Precache other resources with routing
 // (caching files in 'install' event handler of service-worker)
 precacheAndRoute([
   //{ url: '/', revision: `main-${CACHE_VERSION}` },
@@ -77,11 +67,64 @@ precacheAndRoute([
   ignoreURLParametersMatching: [/.*/],
 });
 
-// HTML PAGES - Cache with NetworkFirst strategy
+// Custom handler for homepage: Network → Runtime Cache → Precache
+registerRoute(
+  ({ request, url }) => {
+    return request.mode === 'navigate' && url.pathname === '/';
+  },
+  async ({ request }) => {
+    // Step 1: Try network first (with timeout)
+    try {
+      const networkPromise = fetch(request.clone());
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Network timeout')), NETWORK_TIMEOUT_SECONDS * 1000)
+      );
+      
+      const networkResponse = await Promise.race([networkPromise, timeoutPromise]) as Response;
+      
+      if (networkResponse && networkResponse.ok) {
+        // Cache in runtime cache for next time
+        const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+        pagesCache.put(request.clone(), networkResponse.clone());
+        return networkResponse;
+      }
+    } catch (error) {
+      console.log('[SW] Network failed, trying runtime cache:', error);
+    }
+
+    // Step 2: Try runtime cache
+    try {
+      const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+      const cached = await pagesCache.match(request);
+      if (cached) {
+        console.log('[SW] Found homepage in runtime cache');
+        return cached;
+      }
+    } catch (error) {
+      console.warn('[SW] Runtime cache lookup failed:', error);
+    }
+
+    // Step 3: Fallback to precache (offline scenario)
+    try {
+      const precached = await matchPrecache('/');
+      if (precached) {
+        console.log('[SW] Serving homepage from precache (offline fallback)');
+        return precached;
+      }
+    } catch (error) {
+      console.warn('[SW] Precache fallback failed:', error);
+    }
+
+    // If all fails, throw to trigger catch handler
+    throw new Error('Homepage not available in any cache');
+  }
+);
+
+// Other HTML pages use NetworkFirst (normal behavior)
 registerRoute(
   ({ request, url }) => {
     // Handle navigation requests - INCLUDING the homepage
-    return request.mode === 'navigate'// && url.pathname !== '/';
+    return request.mode === 'navigate' && url.pathname !== '/';
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
