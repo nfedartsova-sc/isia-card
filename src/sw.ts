@@ -61,7 +61,11 @@ precacheAndRoute([
 
 // HTML PAGES - Cache with NetworkFirst strategy
 registerRoute(
-  ({ request }) => request.mode === 'navigate',
+  ({ request, url }) => {
+    // Only handle navigation requests that are NOT the homepage
+    // The homepage '/' is handled by precacheAndRoute
+    return request.mode === 'navigate' && url.pathname !== '/';
+  },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
     // Fall back to cache after given number of seconds if offline
@@ -265,7 +269,7 @@ setCatchHandler(async ({ request, url }) => {
 
         console.error('[SW] Could not find cached homepage anywhere');
         console.warn('[SW] Available caches:', await caches.keys());
-        
+
         // Return a simple loading page instead of offline page
         return new Response(
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Loading</title></head><body><h1>Loading application...</h1></body></html>',
