@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { runtimeCachesConfig } from './runtimeCachesConfig';
+import { cacheNames } from 'workbox-core';
 import {
   CLEAR_ORPHANED_INDEXEDDB_ATTEMPTS_NUMBER,
   CLEAR_ORPHANED_INDEXEDDB_WAIT_INTERVAL_BETWEEN_ATTEMPS_MS,
@@ -18,9 +19,9 @@ export function setupActivateHandler() {
     event.waitUntil(
       Promise.all([
         // 1. Clean old runtime caches
-        caches.keys().then((cacheNames) => {
+        caches.keys().then((cacheNamesList) => {
           const validCacheNames = Object.values(runtimeCachesConfig).map(c => c.name);
-          const cachesToDelete = cacheNames.filter(
+          const cachesToDelete = cacheNamesList.filter(
             cacheName => cacheName.includes('runtime') && !validCacheNames.includes(cacheName)
           );
           return Promise.all(
@@ -33,8 +34,8 @@ export function setupActivateHandler() {
           );
         }),
          // 2. Clean old precache caches (IMPORTANT: This ensures new precache entries replace old ones)
-         caches.keys().then((cacheNames) => {
-          const precacheCaches = cacheNames.filter(name => 
+         caches.keys().then((cacheNamesList) => {
+          const precacheCaches = cacheNamesList.filter(name => 
             name.includes('precache') || name.startsWith('workbox-precache')
           );
           // Keep only the current precache cache
