@@ -64,7 +64,7 @@ registerRoute(
   ({ request, url }) => {
     // Only handle navigation requests that are NOT the homepage
     // The homepage '/' is handled by precacheAndRoute
-    return request.mode === 'navigate' && url.pathname !== '/';
+    return request.mode === 'navigate'// && url.pathname !== '/';
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
@@ -104,9 +104,10 @@ registerRoute(
                     url.pathname.includes('/_next/static/chunks/');
     
     // Exclude precached files
-    const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
+    //const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
-    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+    // return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile);
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -130,8 +131,8 @@ registerRoute(
 // IMAGES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => 
-    request.destination === DESTINATION_TYPE.IMAGE &&
-    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
+    request.destination === DESTINATION_TYPE.IMAGE,// &&
+    //!PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
   new CacheFirst({
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
