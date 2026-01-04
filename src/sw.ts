@@ -9,7 +9,8 @@
 //   clients (Clients API), skipWaiting(), clients.claim(), addEventListener for service worker events, ...).
 
 import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
-import { 
+import {
+  precache,
   precacheAndRoute, 
   cleanupOutdatedCaches, 
   matchPrecache,
@@ -41,10 +42,25 @@ setupMessageHandler();
 // It does not delete runtime caches
 cleanupOutdatedCaches();
 
+// Precache resources BUT don't route homepage through precache
+// Only precache it for offline fallback in catch handler
+precache([
+  { url: '/', revision: `main-${CACHE_VERSION}` }, // Precache but don't auto-route
+  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
+  ...PRECACHED_IMAGES.map((imgData) => ({
+    url: imgData.url,
+    revision: null,
+  })),
+  ...PRECACHED_JS_FILES.map((jsData) => ({
+    url: jsData.url,
+    revision: jsData.revision || null,
+  })),
+]);
+
 // Precache essential resources
 // (caching files in 'install' event handler of service-worker)
 precacheAndRoute([
-  { url: '/', revision: `main-${CACHE_VERSION}` },
+  //{ url: '/', revision: `main-${CACHE_VERSION}` },
   { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
