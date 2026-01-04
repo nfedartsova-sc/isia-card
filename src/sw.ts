@@ -65,8 +65,8 @@ precacheAndRoute([
 // HTML pages use NetworkFirst (normal behavior)
 registerRoute(
   ({ request, url }) => {
-    // Handle navigation requests - INCLUDING the homepage
-    return request.mode === 'navigate';// && url.pathname !== '/';
+    // Handle navigation requests - EXCLUDING the homepage
+    return request.mode === 'navigate' && url.pathname !== '/';
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
