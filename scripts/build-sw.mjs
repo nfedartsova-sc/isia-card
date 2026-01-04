@@ -13,6 +13,9 @@ await esbuild.build({
   define: {
     'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
   },
+  banner: {
+    js: `// Service Worker built at ${new Date().toISOString()}\n`,
+  },
 });
 
 console.log('✅ Service worker built successfully!');

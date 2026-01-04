@@ -32,7 +32,25 @@ export function setupActivateHandler() {
             })
           );
         }),
-        // 2. Clean orphaned IndexedDB (workbox-expiration databases)
+         // 2. Clean old precache caches (IMPORTANT: This ensures new precache entries replace old ones)
+         caches.keys().then((cacheNames) => {
+          const precacheCaches = cacheNames.filter(name => 
+            name.includes('precache') || name.startsWith('workbox-precache')
+          );
+          // Keep only the current precache cache
+          const currentPrecacheCache = cacheNames.precache;
+          const oldPrecacheCaches = precacheCaches.filter(name => name !== currentPrecacheCache);
+          
+          return Promise.all(
+            oldPrecacheCaches.map((cacheName) => {
+              return caches.delete(cacheName).then(deleted => {
+                console.log(`[SW] Old precache ${cacheName} deleted:`, deleted);
+                return deleted;
+              });
+            })
+          );
+        }),
+        // 3. Clean orphaned IndexedDB (workbox-expiration databases)
         (async () => {
           if (typeof indexedDB === 'undefined' || !indexedDB.databases)
             return;
@@ -66,7 +84,7 @@ export function setupActivateHandler() {
             }
           }
         })(),
-        // 3. Ensure service worker takes control immediately
+        // 4. Ensure service worker takes control immediately
         // (wrapping clients.claim() in event.waitUntil() ensures it completes before
         // the activate event finishes)
         // This method takes immediate control of any existing clients (open tabs/windows) when the service worker activates.

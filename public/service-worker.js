@@ -1,5 +1,5 @@
 const MIN_UPDATE_INTERVAL_MS = 5000; // Minimum 5 seconds between update checks
-const UPDATES_CHECK_FREQUENCY_HOURS = 1; // how often check for updates
+const UPDATES_CHECK_FREQUENCY_HOURS = 0.1; // Check every 6 minutes
 const CHECK_UPDATES_DELAY_MS = 2000;
 const RELOAD_SERVICE_WORKER_KEY = 'sw-reload';
 const RELOAD_SERVICE_WORKER_TIME_KEY = 'sw-reload-time';
