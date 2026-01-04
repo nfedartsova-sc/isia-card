@@ -237,7 +237,7 @@ When the server is unavailable, execution depends on the strategy and destinatio
 <td>NetworkFirst (3s timeout)</td>
 <td>✅ Runtime cache (after 3s timeout)</td>
 <td>❌ Fails after 3s</td>
-<td>Homepage → Offline page → Simple HTML</td>
+<td>Homepage (multiple cache strategies) → Simple loading page</td>
 </tr>
 
 <tr>

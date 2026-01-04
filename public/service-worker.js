@@ -7,15 +7,21 @@ const SERVICE_WORKER_FILE = '/sw.js';
 const REGISTRATION_SCOPE = './';
 const SKIP_WAITING_MESSAGE = 'SKIP_WAITING';
 const SMALL_DELAY_TO_ENSURE_SERVICE_WORKER_READY_MS = 100;
+const POST_RELOAD_GRACE_PERIOD_MS = 5000; // Don't check for updates for 5 seconds after reload
 
 function registerServiceWorker() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator))
     return;
 
   // Check if we just reloaded due to service worker update
-  const justReloaded = sessionStorage.getItem(RELOAD_SERVICE_WORKER_KEY);
-  if (justReloaded)
+  const reloadTime = sessionStorage.getItem(RELOAD_SERVICE_WORKER_TIME_KEY);
+  const justReloaded = reloadTime && (Date.now() - parseInt(reloadTime)) < POST_RELOAD_GRACE_PERIOD_MS;
+  
+  // Clear the flag AFTER we've checked it, but only if grace period has passed
+  if (reloadTime && !justReloaded) {
     sessionStorage.removeItem(RELOAD_SERVICE_WORKER_KEY);
+    sessionStorage.removeItem(RELOAD_SERVICE_WORKER_TIME_KEY);
+  }
   
   // Register the service worker
   navigator.serviceWorker.register(SERVICE_WORKER_FILE, {
@@ -31,9 +37,10 @@ function registerServiceWorker() {
       
       // Helper function to safely check for updates
       const safeUpdate = () => {
-        // Don't check if we just reloaded (within first 3 seconds)
-        if (justReloaded && Date.now() - parseInt(sessionStorage.getItem(RELOAD_SERVICE_WORKER_TIME_KEY) || '0') < 3000)
+        // Don't check if we just reloaded (within grace period)
+        if (justReloaded) {
           return;
+        }
         
         // Prevent multiple simultaneous update checks
         if (updateCheckInProgress)
@@ -81,39 +88,65 @@ function registerServiceWorker() {
           setTimeout(safeUpdate, CHECK_UPDATES_DELAY_MS); // Small delay to prevent rapid checks
       });
       
-      // Listen for updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed') {
-              if (navigator.serviceWorker.controller) {
-                // There's a new service worker available
-                // TODO: inform user?
-                console.log('New service worker available. Reload to update.');
-                // Mark that we're about to reload
-                sessionStorage.setItem(RELOAD_SERVICE_WORKER_KEY, 'true');
-                sessionStorage.setItem(RELOAD_SERVICE_WORKER_TIME_KEY, Date.now().toString());
-                // Force activation by sending skip waiting message
-                newWorker.postMessage({ type: SKIP_WAITING_MESSAGE });
-              } else {
-                // First time installation, no need to reload
-                console.log('Service worker installed for the first time.');
+      // Listen for updates - but ignore if we just reloaded
+      if (!justReloaded) {
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  // There's a new service worker available
+                  // TODO: inform user?
+                  console.log('New service worker available. Reload to update.');
+                  // Mark that we're about to reload
+                  sessionStorage.setItem(RELOAD_SERVICE_WORKER_KEY, 'true');
+                  sessionStorage.setItem(RELOAD_SERVICE_WORKER_TIME_KEY, Date.now().toString());
+                  // Force activation by sending skip waiting message
+                  newWorker.postMessage({ type: SKIP_WAITING_MESSAGE });
+                } else {
+                  // First time installation, no need to reload
+                  console.log('Service worker installed for the first time.');
+                }
               }
-            }
-          });
-        }
-      });
-    })
-    .catch((error) => {
-      console.error('Service worker registration failed:', error);
-    });
+            });
+          }
+        });
+    } else {
+      // If we just reloaded, set up the listener after a delay
+      setTimeout(() => {
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  console.log('New service worker available. Reload to update.');
+                  sessionStorage.setItem(RELOAD_SERVICE_WORKER_KEY, 'true');
+                  sessionStorage.setItem(RELOAD_SERVICE_WORKER_TIME_KEY, Date.now().toString());
+                  newWorker.postMessage({ type: SKIP_WAITING_MESSAGE });
+                } else {
+                  console.log('Service worker installed for the first time.');
+                }
+              }
+            });
+          }
+        });
+      }, POST_RELOAD_GRACE_PERIOD_MS);
+    }
+  })
+  .catch((error) => {
+    console.error('Service worker registration failed:', error);
+  });
   
   // Listen for controller changes (when new service worker takes control)
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     // Only reload if we actually have a new service worker
-    if (sessionStorage.getItem(RELOAD_SERVICE_WORKER_KEY)) {
+    const shouldReload = sessionStorage.getItem(RELOAD_SERVICE_WORKER_KEY);
+    if (shouldReload) {
       console.log('Service worker controller changed. Reloading page...');
+      // Clear the flag BEFORE reload to prevent loops
+      sessionStorage.removeItem(RELOAD_SERVICE_WORKER_KEY);
       // Small delay to ensure the new service worker is ready
       setTimeout(() => {
         window.location.reload();
