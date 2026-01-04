@@ -9,7 +9,7 @@
 //   clients (Clients API), skipWaiting(), clients.claim(), addEventListener for service worker events, ...).
 
 import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-precaching';
 import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
@@ -186,16 +186,25 @@ setCatchHandler(async ({ request, url }) => {
         // For HTML pages, prioritize finding the cached homepage (card page)
         // We want to show the card, NOT the offline page
   
-        // Try multiple cache matching strategies
-        let cachedHomepage = await caches.match(request) || 
-                            await caches.match('/') ||
-                            await caches.match(new Request('/', { method: 'GET' }));
+        // First, try to match precached homepage using Workbox's precache API
+        // This is the most reliable way to find precached resources
+        let cachedHomepage = await matchPrecache('/') || 
+                            await matchPrecache(request.url) ||
+                            await matchPrecache(new Request('/', { method: 'GET' }));
 
+
+        // If precache match failed, try direct cache matching
+        if (!cachedHomepage) {
+          cachedHomepage = await caches.match(request) || 
+                          await caches.match('/') ||
+                          await caches.match(new Request('/', { method: 'GET' }));
+        }
+        
         // Try runtime cache
         if (!cachedHomepage) {
           const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
           cachedHomepage = await pagesCache.match('/') || 
-          await pagesCache.match(request);
+                          await pagesCache.match(request);
         }
 
         // Try all caches for homepage
@@ -203,14 +212,23 @@ setCatchHandler(async ({ request, url }) => {
           const cacheNames = await caches.keys();
           for (const cacheName of cacheNames) {
             const cache = await caches.open(cacheName);
-            cachedHomepage = await cache.match('/');
+            // Try multiple matching strategies
+            cachedHomepage = await cache.match('/') ||
+                            await cache.match(request) ||
+                            await cache.match(new Request('/', { method: 'GET' }));
             if (cachedHomepage) break;
           }
         }
 
         // Return homepage if found, otherwise return simple loading page
         // DO NOT serve the offline page - user wants to see the card
-        if (cachedHomepage) return cachedHomepage;
+        if (cachedHomepage) {
+          console.log('[SW] Serving cached homepage for offline request');
+          return cachedHomepage;
+        }
+
+        // If we still can't find it, log for debugging
+        console.warn('[SW] Could not find cached homepage. Available caches:', await caches.keys());
 
         // Return a simple loading page instead of offline page
         return new Response(

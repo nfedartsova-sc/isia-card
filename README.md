@@ -290,3 +290,47 @@ When the server is unavailable, execution depends on the strategy and destinatio
 </table>
 
 * Are given in the order of application if the previous variants failed
+
+## IndexedDB clearing issues and block reasons
+
+### Why IndexedDB Deletion Gets Blocked
+
+When indexedDB.deleteDatabase() is called, the browser blocks deletion if:
+
+1. There are open connections to the database — any tab, window, or service worker with an active IDBDatabase object.
+
+2. There are active transactions — read/write operations in progress.
+
+3. The database is being used by the service worker — Workbox's expiration plugin uses IndexedDB to track cache metadata.
+
+### In Our Case
+
+Workbox's ExpirationPlugin creates IndexedDB databases (named like workbox-expiration-<cache-name>) to track cache expiration metadata. When you try to delete these databases:
+
+1. If Workbox is actively using them (checking expiration, updating metadata), the deletion is blocked.
+
+2. The onblocked event fires, indicating the browser is waiting for connections to close.
+
+3. Once all connections close, the deletion proceeds and onsuccess fires.
+
+### Common Scenarios
+
+1. Service worker is using the database — Workbox may have open connections for cache management.
+
+2. Multiple tabs — other tabs might have the app open with active connections.
+
+3. Pending transactions — operations that haven't completed yet.
+
+4. Browser internal operations — the browser may be performing maintenance.
+
+### Best Practices
+
+The approach of waiting for onsuccess instead of resolving on onblocked is correct because:
+
+onblocked = "deletion is waiting" (not complete)
+
+onsuccess = "deletion completed"
+
+onerror = "deletion failed"
+
+The deletion will eventually complete once all connections close, which is why waiting with a timeout is the right approach. The timeout prevents infinite waiting if something goes wrong, but normally the deletion completes once Workbox and other connections release the database.
