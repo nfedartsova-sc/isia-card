@@ -31,6 +31,11 @@ function registerServiceWorker() {
     .then((registration) => {
       console.log('The App service worker has been successfully registered:', registration);
       
+      // Force an immediate update check when page loads (helps catch updates faster)
+      if (registration) {
+        registration.update();
+      }
+      
       // Track if update check is in progress to prevent multiple simultaneous checks
       let updateCheckInProgress = false;
       let lastUpdateCheck = 0;

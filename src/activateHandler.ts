@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { runtimeCachesConfig } from './runtimeCachesConfig';
-import { cacheNames } from 'workbox-core';
+// import { cacheNames } from 'workbox-core';
 import {
   CLEAR_ORPHANED_INDEXEDDB_ATTEMPTS_NUMBER,
   CLEAR_ORPHANED_INDEXEDDB_WAIT_INTERVAL_BETWEEN_ATTEMPS_MS,
@@ -34,7 +34,7 @@ export function setupActivateHandler() {
           );
         }),
          // 2. Clean old precache caches (IMPORTANT: This ensures new precache entries replace old ones)
-         caches.keys().then((cacheNamesList) => {
+         /*caches.keys().then((cacheNamesList) => {
           const precacheCaches = cacheNamesList.filter(name => 
             name.includes('precache') || name.startsWith('workbox-precache')
           );
@@ -50,7 +50,7 @@ export function setupActivateHandler() {
               });
             })
           );
-        }),
+        }),*/
         // 3. Clean orphaned IndexedDB (workbox-expiration databases)
         (async () => {
           if (typeof indexedDB === 'undefined' || !indexedDB.databases)
