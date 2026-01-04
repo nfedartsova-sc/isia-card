@@ -13,7 +13,7 @@ import { CACHE_VERSION } from './constants';
 export const runtimeCachesConfig = {
   pages: {
     name: `pages-runtime-${CACHE_VERSION}`,
-    //maxAge: 5 * 60, // 5 минут
+    maxAge: 60 * 60, // 60 minutes
     maxEntries: 50,
   },
   static: {

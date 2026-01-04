@@ -44,7 +44,7 @@ cleanupOutdatedCaches();
 // Precache essential resources
 // (caching files in 'install' event handler of service-worker)
 precacheAndRoute([
-  { url: '/', revision: `main-${CACHE_VERSION}` },
+  //{ url: '/', revision: `main-${CACHE_VERSION}` },
   { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
@@ -62,8 +62,7 @@ precacheAndRoute([
 // HTML PAGES - Cache with NetworkFirst strategy
 registerRoute(
   ({ request, url }) => {
-    // Only handle navigation requests that are NOT the homepage
-    // The homepage '/' is handled by precacheAndRoute
+    // Handle navigation requests - INCLUDING the homepage
     return request.mode === 'navigate'// && url.pathname !== '/';
   },
   new NetworkFirst({
@@ -76,7 +75,7 @@ registerRoute(
       // Cache expiration rules
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.pages.maxEntries,
-        //maxAgeSeconds: runtimeCachesConfig.pages.maxAge,
+        maxAgeSeconds: runtimeCachesConfig.pages.maxAge,
         //purgeOnQuotaError: true, // Удалить при нехватке места
       }),
     ],
