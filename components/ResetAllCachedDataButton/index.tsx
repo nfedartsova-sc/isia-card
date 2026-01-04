@@ -9,6 +9,7 @@ import { ISIA_CARD_DATA_ENDPOINT } from '@/hooks/useISIACardData.hook';
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import { useMessages } from '@/contexts/MessageContext';
 import { PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';
+import { runtimeCachesConfig } from '@/src/runtimeCachesConfig';
 
 interface ResetAllCachedDataButtonProps {
   className?: string;
@@ -314,6 +315,29 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
               })
             )
           );
+
+          // CRITICAL FIX: Explicitly cache homepage in runtime pages cache
+          // This ensures it's available offline even if precache matching fails
+          try {
+            const homepageResponse = await fetch('/', { 
+              method: 'GET',
+              cache: 'no-cache', // Force network fetch to get fresh content
+            });
+            
+            if (homepageResponse.ok) {
+              // Clone the response because we'll use it twice
+              const responseClone = homepageResponse.clone();
+              
+              // Store in runtime pages cache as fallback
+              const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+              await pagesCache.put('/', responseClone);
+              
+              addMessage({ message: { type: 'success', text: 'Homepage cached in runtime cache for offline use', level: 'debug' } });
+            }
+          } catch (error) {
+            console.warn('Error caching homepage in runtime cache:', error);
+            addMessage({ message: { type: 'info', text: 'Could not cache homepage - it may not be available offline', level: 'debug' } });
+          }
           
           addMessage({ message: { type: 'success', text: 'Critical resources preloaded', level: 'debug' } });
         } catch (error) {
