@@ -9,7 +9,13 @@
 //   clients (Clients API), skipWaiting(), clients.claim(), addEventListener for service worker events, ...).
 
 import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
-import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-precaching';
+import { 
+  precacheAndRoute, 
+  cleanupOutdatedCaches, 
+  matchPrecache,
+  getCacheKeyForURL,
+} from 'workbox-precaching';
+import { cacheNames } from 'workbox-core';
 import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
@@ -176,7 +182,7 @@ setDefaultHandler(new NetworkOnly());
 
 // Global catch handler for failed requests
 setCatchHandler(async ({ request, url }) => {
-  console.warn('Request failed:', request.url);
+  console.warn('[SW] Catch handler triggered for:', request.url, 'destination:', request.destination);
 
   const destination = request.destination;
 
@@ -185,51 +191,81 @@ setCatchHandler(async ({ request, url }) => {
       case 'document': {
         // For HTML pages, prioritize finding the cached homepage (card page)
         // We want to show the card, NOT the offline page
+        console.log('[SW] Attempting to find cached homepage...');
   
-        // First, try to match precached homepage using Workbox's precache API
-        // This is the most reliable way to find precached resources
-        let cachedHomepage = await matchPrecache('/') || 
-                            await matchPrecache(request.url) ||
-                            await matchPrecache(new Request('/', { method: 'GET' }));
-
-
-        // If precache match failed, try direct cache matching
-        if (!cachedHomepage) {
-          cachedHomepage = await caches.match(request) || 
-                          await caches.match('/') ||
-                          await caches.match(new Request('/', { method: 'GET' }));
-        }
-        
-        // Try runtime cache
-        if (!cachedHomepage) {
-          const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
-          cachedHomepage = await pagesCache.match('/') || 
-                          await pagesCache.match(request);
-        }
-
-        // Try all caches for homepage
-        if (!cachedHomepage) {
-          const cacheNames = await caches.keys();
-          for (const cacheName of cacheNames) {
-            const cache = await caches.open(cacheName);
-            // Try multiple matching strategies
-            cachedHomepage = await cache.match('/') ||
-                            await cache.match(request) ||
-                            await cache.match(new Request('/', { method: 'GET' }));
-            if (cachedHomepage) break;
-          }
-        }
-
-        // Return homepage if found, otherwise return simple loading page
-        // DO NOT serve the offline page - user wants to see the card
+        // Method 1: Use matchPrecache (Workbox's official API)
+        let cachedHomepage = await matchPrecache('/');
         if (cachedHomepage) {
-          console.log('[SW] Serving cached homepage for offline request');
+          console.log('[SW] Found homepage in precache via matchPrecache');
           return cachedHomepage;
         }
 
-        // If we still can't find it, log for debugging
-        console.warn('[SW] Could not find cached homepage. Available caches:', await caches.keys());
+        // Method 2: Use getCacheKeyForURL + direct cache access
+        try {
+          const cacheKey = getCacheKeyForURL('/');
+          if (cacheKey) {
+            console.log('[SW] Precache key for /:', cacheKey);
+            const precacheCache = await caches.open(cacheNames.precache);
+            cachedHomepage = await precacheCache.match(cacheKey);
+            if (cachedHomepage) {
+              console.log('[SW] Found homepage in precache via cacheKey');
+              return cachedHomepage;
+            }
+          }
+        } catch (e) {
+          console.warn('[SW] Error accessing precache:', e);
+        }
 
+        // Method 3: Try direct cache matching (for runtime cache)
+        cachedHomepage = await caches.match('/') || await caches.match(request);
+        if (cachedHomepage) {
+          console.log('[SW] Found homepage in direct cache match');
+          return cachedHomepage;
+        }
+
+        // Method 4: Check runtime pages cache
+        try {
+          const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+          cachedHomepage = await pagesCache.match('/') || await pagesCache.match(request);
+          if (cachedHomepage) {
+            console.log('[SW] Found homepage in pages runtime cache');
+            return cachedHomepage;
+          }
+        } catch (e) {
+          console.warn('[SW] Error accessing pages cache:', e);
+        }
+
+        // Method 5: Search ALL caches (comprehensive fallback)
+        try {
+          const cacheNamesList = await caches.keys();
+          console.log('[SW] Available caches:', cacheNamesList);
+          
+          for (const cacheName of cacheNamesList) {
+            const cache = await caches.open(cacheName);
+            cachedHomepage = await cache.match('/') ||
+                            await cache.match(request) ||
+                            await cache.match(new Request('/', { method: 'GET' }));
+            if (cachedHomepage) {
+              console.log(`[SW] Found homepage in cache: ${cacheName}`);
+              return cachedHomepage;
+            }
+          }
+        } catch (e) {
+          console.warn('[SW] Error searching all caches:', e);
+        }
+
+        // Debug: Log what's actually in the precache
+        try {
+          const precacheCache = await caches.open(cacheNames.precache);
+          const precacheKeys = await precacheCache.keys();
+          console.log('[SW] Precache keys:', precacheKeys.map(r => r.url));
+        } catch (e) {
+          console.warn('[SW] Could not inspect precache:', e);
+        }
+
+        console.error('[SW] Could not find cached homepage anywhere');
+        console.warn('[SW] Available caches:', await caches.keys());
+        
         // Return a simple loading page instead of offline page
         return new Response(
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Loading</title></head><body><h1>Loading application...</h1></body></html>',
