@@ -304,16 +304,19 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
             const cache = await caches.open(cacheName);
             for (const urlToTry of urlVariations) {
               // Try multiple matching strategies
-              const matches = [
+              const matchResults = [
                 await cache.match(urlToTry),
                 await cache.match(new Request(urlToTry)),
                 await cache.match(new URL(urlToTry, origin).href),
                 await cache.match(new Request(new URL(urlToTry, origin).href)),
-              ].filter(Boolean);
+              ];
               
-              if (matches.length > 0) {
+              // Find the first non-undefined match
+              const match = matchResults.find((response): response is Response => response !== undefined);
+              
+              if (match) {
                 console.log(`[SW] Found in cache ${cacheName}:`, urlToTry);
-                return matches[0];
+                return match;
               }
             }
           }
