@@ -44,15 +44,17 @@ cleanupOutdatedCaches();
 // Precache essential resources
 // (caching files in 'install' event handler of service-worker)
 precacheAndRoute([
-  //{ url: '/', revision: `main-${CACHE_VERSION}` },
+  { url: '/', revision: `main-${CACHE_VERSION}` },
   { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
-    revision: `${imgData.shortDescription}-${CACHE_VERSION}`,
+    // revision: `${imgData.shortDescription}-${CACHE_VERSION}`,
+    revision: null, // Let Workbox use content hash - only updates if file changes
   })),
   ...PRECACHED_JS_FILES.map((jsData) => ({
     url: jsData.url,
-    revision: jsData.revision || CACHE_VERSION,
+    //revision: jsData.revision || CACHE_VERSION,
+    revision: jsData.revision || null, // Use null instead of CACHE_VERSION
   })),
 ], {
   // Ignore all URL parameters
