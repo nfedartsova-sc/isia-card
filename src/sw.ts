@@ -206,64 +206,64 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
 
   const destination = request.destination;
 
+  // Helper function to find precached resource by pathname (reusable for images and documents)
+  const findPrecachedByPathname = async (pathname: string): Promise<Response | null> => {
+    try {
+      // Method 1: Use Workbox's matchPrecache (handles __WB_REVISION__ automatically)
+      const precached = await matchPrecache(pathname);
+      if (precached) {
+        console.log('[SW] Found in precache via matchPrecache:', pathname);
+        return precached;
+      }
+    } catch (e) {
+      // Continue to manual search
+    }
+
+    try {
+      // Method 2: Use getCacheKeyForURL (Workbox's recommended way)
+      const cacheKey = getCacheKeyForURL(pathname);
+      if (cacheKey) {
+        const precacheCache = await caches.open(cacheNames.precache);
+        const cached = await precacheCache.match(cacheKey);
+        if (cached) {
+          console.log('[SW] Found in precache via getCacheKeyForURL:', pathname);
+          return cached;
+        }
+      }
+    } catch (e) {
+      // Continue to manual search
+    }
+
+    try {
+      // Method 3: Manually search precache cache by iterating keys
+      // This handles __WB_REVISION__ query parameters
+      const precacheCache = await caches.open(cacheNames.precache);
+      const precacheKeys = await precacheCache.keys();
+      
+      // Normalize pathname for comparison
+      const normalizedPathname = pathname === '' ? '/' : pathname;
+      
+      for (const cachedRequest of precacheKeys) {
+        const cachedUrl = new URL(cachedRequest.url);
+        // Match by pathname, ignoring query parameters (including __WB_REVISION__)
+        if (cachedUrl.pathname === normalizedPathname) {
+          const cached = await precacheCache.match(cachedRequest);
+          if (cached) {
+            console.log('[SW] Found in precache by manual search:', cachedRequest.url, 'for pathname:', normalizedPathname);
+            return cached;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[SW] Error manually searching precache:', e);
+    }
+
+    return null;
+  };
+
   try {
     switch (destination) {
       case 'document': {
-         // Helper function to find precached resource by pathname
-        const findPrecachedByPathname = async (pathname: string): Promise<Response | null> => {
-          try {
-            // Method 1: Use Workbox's matchPrecache (handles __WB_REVISION__ automatically)
-            const precached = await matchPrecache(pathname);
-            if (precached) {
-              console.log('[SW] Found in precache via matchPrecache:', pathname);
-              return precached;
-            }
-          } catch (e) {
-            // Continue to manual search
-          }
-
-          try {
-            // Method 2: Use getCacheKeyForURL (Workbox's recommended way)
-            const cacheKey = getCacheKeyForURL(pathname);
-            if (cacheKey) {
-              const precacheCache = await caches.open(cacheNames.precache);
-              const cached = await precacheCache.match(cacheKey);
-              if (cached) {
-                console.log('[SW] Found in precache via getCacheKeyForURL:', pathname);
-                return cached;
-              }
-            }
-          } catch (e) {
-            // Continue to manual search
-          }
-
-          try {
-            // Method 3: Manually search precache cache by iterating keys
-            // This handles __WB_REVISION__ query parameters
-            const precacheCache = await caches.open(cacheNames.precache);
-            const precacheKeys = await precacheCache.keys();
-            
-            // Normalize pathname for comparison
-            const normalizedPathname = pathname === '' ? '/' : pathname;
-            
-            for (const cachedRequest of precacheKeys) {
-              const cachedUrl = new URL(cachedRequest.url);
-              // Match by pathname, ignoring query parameters (including __WB_REVISION__)
-              if (cachedUrl.pathname === normalizedPathname) {
-                const cached = await precacheCache.match(cachedRequest);
-                if (cached) {
-                  console.log('[SW] Found in precache by manual search:', cachedRequest.url, 'for pathname:', normalizedPathname);
-                  return cached;
-                }
-              }
-            }
-          } catch (e) {
-            console.warn('[SW] Error manually searching precache:', e);
-          }
-
-          return null;
-        };
-
         // Try to find the requested page in precache
         const targetPathname = url.pathname === '' ? '/' : url.pathname;
         const precachedPage = await findPrecachedByPathname(targetPathname);
@@ -319,19 +319,14 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
       }
 
       case 'image': {
-        // Check precache first for precached images
-        try {
-          const precached = await matchPrecache(request.url) || 
-                           await matchPrecache(url.pathname);
-          if (precached) {
-            console.log('[SW] Found image in precache:', request.url);
-            return precached;
-          }
-        } catch (e) {
-          console.warn('[SW] Error checking precache for image:', e);
+        // Method 1: Try precache first using the helper function
+        const precachedImage = await findPrecachedByPathname(url.pathname);
+        if (precachedImage) {
+          console.log('[SW] Found image in precache:', url.pathname);
+          return precachedImage;
         }
 
-        // Try to find the image in the images runtime cache
+        // Method 2: Try to find the image in the images runtime cache
         try {
           const imagesCache = await caches.open(runtimeCachesConfig.images.name);
           
@@ -350,7 +345,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error searching images cache:', e);
         }
         
-        // Try all caches as fallback (including precache)
+        // Method 3: Search all caches as fallback (including precache)
         try {
           const allCachesMatch = await caches.match(request) ||
                                await caches.match(url.pathname) ||
@@ -363,10 +358,15 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error searching all caches:', e);
         }
         
-        // Try fallback image from precache
-        const fallbackImage = await caches.match(FALLBACK_IMG);
-        if (fallbackImage) return fallbackImage;
+        // Method 4: Try fallback image from precache using helper
+        const fallbackImage = await findPrecachedByPathname(FALLBACK_IMG);
+        if (fallbackImage) {
+          console.log('[SW] Serving fallback image from precache');
+          return fallbackImage;
+        }
         
+        // Last resort: Return SVG placeholder
+        console.error('[SW] Could not find image anywhere, including fallback:', url.pathname);
         return new Response(
           '<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#ccc"/><text x="50" y="50" text-anchor="middle">No Image</text></svg>',
           { headers: { 'Content-Type': 'image/svg+xml' } }
