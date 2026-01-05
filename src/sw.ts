@@ -396,8 +396,28 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
       }
 
       case 'image': {
+        // Try to find the image in the images runtime cache first
+        try {
+          const imagesCache = await caches.open(runtimeCachesConfig.images.name);
+          
+          // Try multiple matching strategies for the image
+          const cachedImage = await imagesCache.match(request) ||
+                            await imagesCache.match(url.pathname) ||
+                            await imagesCache.match(request.url) ||
+                            await imagesCache.match(request, { ignoreSearch: true });
+          
+          if (cachedImage) {
+            console.log('[SW] Found image in images cache:', request.url);
+            return cachedImage;
+          }
+        } catch (e) {
+          console.warn('[SW] Error searching images cache:', e);
+        }
+        
+        // Try all caches as fallback
         const fallbackImage = await caches.match(FALLBACK_IMG);
         if (fallbackImage) return fallbackImage;
+        
         return new Response(
           '<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#ccc"/><text x="50" y="50" text-anchor="middle">No Image</text></svg>',
           { headers: { 'Content-Type': 'image/svg+xml' } }
@@ -427,10 +447,60 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
         return Response.error();
 
       default: {
+
+// Handle API endpoints (including image API endpoints that might not have destination='image')
+const isImageAPI = IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint));
+const isAPI = url.pathname.startsWith('/api/');
+
+if (isImageAPI) {
+  // Image API endpoints - try images cache
+  try {
+    const imagesCache = await caches.open(runtimeCachesConfig.images.name);
+    const cachedImage = await imagesCache.match(request) ||
+                      await imagesCache.match(url.pathname) ||
+                      await imagesCache.match(request.url) ||
+                      await imagesCache.match(request, { ignoreSearch: true });
+    
+    if (cachedImage) {
+      console.log('[SW] Found image API response in images cache:', request.url);
+      return cachedImage;
+    }
+  } catch (e) {
+    console.warn('[SW] Error searching images cache for API:', e);
+  }
+  
+  // Fallback image for image API endpoints
+  const fallbackImage = await caches.match(FALLBACK_IMG);
+  if (fallbackImage) return fallbackImage;
+}
+
+if (isAPI) {
+  // Regular API endpoints - try API cache
+  try {
+    const apiCache = await caches.open(runtimeCachesConfig.api.name);
+    const cachedAPI = await apiCache.match(request) ||
+                    await apiCache.match(url.pathname) ||
+                    await apiCache.match(request.url) ||
+                    await apiCache.match(request, { ignoreSearch: true });
+    
+    if (cachedAPI) {
+      console.log('[SW] Found API response in cache:', request.url);
+      return cachedAPI;
+    }
+  } catch (e) {
+    console.warn('[SW] Error searching API cache:', e);
+  }
+}
+
+// If nothing found, return error (let the app handle it)
+return Response.error();
+
+
+
         // Don't handle API calls here - NetworkFirst strategy should handle them
         // If NetworkFirst fails, it means the data isn't cached and network is unavailable
         // Returning Response.error() will cause the fetch to fail, which the app can handle
-        return Response.error();
+        //return Response.error();
       }
     }
   } catch (error) {
