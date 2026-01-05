@@ -220,6 +220,8 @@ export function setupMessageHandler() {
             });
           }
         })()
+    );
+    }
 
     // TODO: delete if not necessary
 
