@@ -158,26 +158,49 @@ registerRoute(
         //purgeOnQuotaError: true, // Удалить при нехватке места
       }),
     ],
+    // Add matchOptions to handle URL variations
+    matchOptions: {
+      ignoreSearch: true, // Ignore query parameters when matching
+    },
   })
 );
 
 // Add this custom strategy class before the registerRoute calls
 class NetworkFirstWithOfflineCheck extends NetworkFirst {
   async _handle(request: Request, handler: StrategyHandler): Promise<Response> {
-    // On iOS, navigator.onLine might not be reliable in service worker context
-    // So we try cache first if network seems unavailable
+    // Comprehensive cache matching before trying network
+    // This is critical for iOS Safari which may hang on network requests when offline
     try {
-      // Try to get from cache first if we suspect we're offline
-      const cachedResponse = await handler.cacheMatch(request);
+      const cache = await caches.open(this.cacheName || runtimeCachesConfig.api.name);
+      const url = new URL(request.url);
+      
+      // Try multiple cache matching strategies (same as catch handler)
+      const matchResults = [
+        await cache.match(request),
+        await cache.match(url.pathname),
+        await cache.match(request.url),
+        await cache.match(new Request(url.pathname)),
+        await cache.match(new Request(request.url)),
+        await cache.match(request, { ignoreSearch: true }),
+      ];
+      
+      const cachedResponse = matchResults.find((response): response is Response => response !== undefined);
+      
       if (cachedResponse) {
-        // Still try network in background for fresh data
-        handler.fetch(request).catch(() => {});
+        console.log('[SW] NetworkFirstWithOfflineCheck: Found in cache, returning cached response:', url.pathname);
+        // Still try network in background for fresh data (but don't wait for it)
+        handler.fetch(request).catch(() => {
+          // Silently fail background fetch
+        });
         return cachedResponse;
       }
     } catch (e) {
+      console.warn('[SW] NetworkFirstWithOfflineCheck: Error checking cache:', e);
       // Continue to network-first if cache check fails
     }
-    // Fall back to standard NetworkFirst behavior
+    
+    // If no cache found, fall back to standard NetworkFirst behavior
+    // But with a shorter timeout for iOS compatibility
     return super._handle(request, handler);
   }
 }
