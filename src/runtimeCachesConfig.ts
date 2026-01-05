@@ -28,7 +28,7 @@ export const runtimeCachesConfig = {
   },
   api: {
     name: `api-runtime-${CACHE_VERSION}`,
-    maxAge: 5 * 60, // 5 minutes
+    maxAge: 30 * 24 * 60 * 60, // 30 days
     maxEntries: 50,
   },
   font: {
