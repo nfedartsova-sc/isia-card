@@ -63,7 +63,7 @@ precacheAndRoute([
 // HTML pages use NetworkFirst (normal behavior)
 registerRoute(
   ({ request, url }) => {
-    return request.mode === 'navigate';//&& url.pathname !== HOMEPAGE_HTML_URL;
+    return request.mode === 'navigate' && url.pathname !== HOMEPAGE_HTML_URL;
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
@@ -103,9 +103,9 @@ registerRoute(
                     url.pathname.includes('/_next/static/chunks/');
     
     // Exclude precached files
-    //const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
+    const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
-    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile)/* && isNotPrecached*/;
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -130,8 +130,8 @@ registerRoute(
 // IMAGES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => 
-    request.destination === DESTINATION_TYPE.IMAGE/* &&
-    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname)*/,
+    request.destination === DESTINATION_TYPE.IMAGE &&
+    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
   new CacheFirst({
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
@@ -164,8 +164,8 @@ registerRoute(
 // API - Cache with NetworkFirst strategy (exclude image API endpoints)
 registerRoute(
   ({ url }) => 
-    url.pathname.startsWith('/api/')/* &&
-    !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint))*/,
+    url.pathname.startsWith('/api/') &&
+    !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint)),
   new NetworkFirst({
     cacheName: runtimeCachesConfig.api.name,
     // Fall back to cache after given number of seconds if offline
@@ -209,6 +209,9 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
   // Helper function to find precached resource by pathname (reusable for images and documents)
   const findPrecachedByPathname = async (pathname: string): Promise<Response | null> => {
     try {
+      // Normalize pathname - ensure it starts with /
+      const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+    
       // Method 1: Use Workbox's matchPrecache (handles __WB_REVISION__ automatically)
       const precached = await matchPrecache(pathname);
       if (precached) {
@@ -488,6 +491,28 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
             }
           } catch (e) {
             console.warn('[SW] Error searching images cache for API:', e);
+          }
+
+           // Also try API cache as fallback (in case it was cached there)
+           try {
+            const apiCache = await caches.open(runtimeCachesConfig.api.name);
+            
+            const matchResults = [
+              await apiCache.match(request),
+              await apiCache.match(url.pathname),
+              await apiCache.match(request.url),
+              await apiCache.match(new Request(url.pathname)),
+              await apiCache.match(new Request(request.url)),
+              await apiCache.match(request, { ignoreSearch: true }),
+            ];
+            
+            const cachedAPI = matchResults.find((response): response is Response => response !== undefined);
+            if (cachedAPI) {
+              console.log('[SW] Found image API response in API cache:', url.pathname);
+              return cachedAPI;
+            }
+          } catch (e) {
+            console.warn('[SW] Error searching API cache for image API:', e);
           }
           
           // Search ALL caches comprehensively
