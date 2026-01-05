@@ -63,7 +63,7 @@ precacheAndRoute([
 // HTML pages use NetworkFirst (normal behavior)
 registerRoute(
   ({ request, url }) => {
-    return request.mode === 'navigate' && url.pathname !== HOMEPAGE_HTML_URL;
+    return request.mode === 'navigate';//&& url.pathname !== HOMEPAGE_HTML_URL;
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
@@ -103,9 +103,9 @@ registerRoute(
                     url.pathname.includes('/_next/static/chunks/');
     
     // Exclude precached files
-    const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
+    //const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
-    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile)/* && isNotPrecached*/;
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -130,8 +130,8 @@ registerRoute(
 // IMAGES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => 
-    request.destination === DESTINATION_TYPE.IMAGE &&
-    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
+    request.destination === DESTINATION_TYPE.IMAGE/* &&
+    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname)*/,
   new CacheFirst({
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
@@ -164,8 +164,8 @@ registerRoute(
 // API - Cache with NetworkFirst strategy (exclude image API endpoints)
 registerRoute(
   ({ url }) => 
-    url.pathname.startsWith('/api/') &&
-    !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint)),
+    url.pathname.startsWith('/api/')/* &&
+    !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint))*/,
   new NetworkFirst({
     cacheName: runtimeCachesConfig.api.name,
     // Fall back to cache after given number of seconds if offline

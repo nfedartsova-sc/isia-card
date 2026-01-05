@@ -228,7 +228,7 @@ export default function ISIACard() {
           >
             <img src="/images/logo.svg" alt="Go to main page" />
           </Link>
-          <span>Your card (Ya!)</span>
+          <span>Your card (Sorry!)</span>
         </div>
         {(!showLoading && isTouchDevice !== undefined) &&
           <div>
