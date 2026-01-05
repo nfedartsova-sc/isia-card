@@ -130,8 +130,8 @@ registerRoute(
 // IMAGES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => 
-    request.destination === DESTINATION_TYPE.IMAGE &&
-    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
+    request.destination === DESTINATION_TYPE.IMAGE/* &&
+    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname)*/,
   new CacheFirst({
     cacheName: runtimeCachesConfig.images.name,
     plugins: [

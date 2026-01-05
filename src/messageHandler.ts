@@ -2,6 +2,8 @@
 
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import { cacheNames } from 'workbox-core';
+import { PRECACHED_IMAGES } from './constants';
+import { runtimeCachesConfig } from './runtimeCachesConfig';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -330,6 +332,46 @@ export function setupMessageHandler() {
             } else {
               console.log('[SW] All caches successfully deleted');
             }
+
+
+// Repopulate critical precached resources in runtime cache
+            // This ensures they're available offline even after clearing precache
+            try {
+              const imagesCache = await caches.open(runtimeCachesConfig.images.name);
+              
+              console.log('[SW] Repopulating precached images in runtime cache...');
+              const imageCacheResults = await Promise.allSettled(
+                PRECACHED_IMAGES.map(async (imgData) => {
+                  try {
+                    const response = await fetch(imgData.url);
+                    if (response.ok) {
+                      await imagesCache.put(imgData.url, response.clone());
+                      console.log(`[SW] Cached ${imgData.url} in runtime cache`);
+                      return { url: imgData.url, success: true };
+                    } else {
+                      console.warn(`[SW] Failed to fetch ${imgData.url}: ${response.status}`);
+                      return { url: imgData.url, success: false };
+                    }
+                  } catch (error) {
+                    console.error(`[SW] Error caching ${imgData.url}:`, error);
+                    return { url: imgData.url, success: false, error };
+                  }
+                })
+              );
+
+              const successfulImages = imageCacheResults.filter(
+                r => r.status === 'fulfilled' && r.value.success
+              ).length;
+              console.log(`[SW] Repopulated ${successfulImages}/${PRECACHED_IMAGES.length} precached images in runtime cache`);
+            } catch (error) {
+              console.error('[SW] Error repopulating precached images:', error);
+              // Continue anyway - this is best effort
+            }
+
+
+
+
+
 
             // Notify all clients that caches are cleared
             const clients = await self.clients.matchAll();
