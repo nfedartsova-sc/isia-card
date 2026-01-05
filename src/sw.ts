@@ -200,6 +200,34 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
         // We want to show the card, NOT the offline page
         console.log('[SW] Attempting to find cached homepage...');
   
+        // CRITICAL FIX: Search precache cache directly, matching by pathname (ignoring query params)
+        // Workbox stores precached URLs with __WB_REVISION__ query parameter, 
+        // so we need to search directly by pathname
+        try {
+          const precacheCache = await caches.open(cacheNames.precache);
+          const precacheKeys = await precacheCache.keys();
+          
+          // Find any precached entry that matches the homepage pathname
+          // This handles URLs like '/?__WB_REVISION__=...' when searching for '/'
+          const targetPathname = url.pathname === '' ? '/' : url.pathname;
+          
+          for (const cachedRequest of precacheKeys) {
+            const cachedUrl = new URL(cachedRequest.url);
+            // Match by pathname, ignoring query parameters (including __WB_REVISION__)
+            if (cachedUrl.pathname === targetPathname || 
+                cachedUrl.pathname === '/' || 
+                (targetPathname === '/' && (cachedUrl.pathname === '' || cachedUrl.pathname === '/'))) {
+              const cached = await precacheCache.match(cachedRequest);
+              if (cached) {
+                console.log('[SW] Found homepage in precache (by pathname):', cachedRequest.url);
+                return cached;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[SW] Error searching precache directly by pathname:', e);
+        }
+
         // CRITICAL: Try to get the precached homepage first using the origin URL
         const origin = url.origin;
         const baseUrl = origin + '/';
@@ -365,12 +393,6 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
             } 
           }
         );
-        
-        // 4. Last resort - simple HTML response
-        // return new Response(
-        //   '<h1>You are offline</h1><p>Please check your connection.</p>',
-        //   { headers: { 'Content-Type': 'text/html' } }
-        // );
       }
 
       case 'image': {
