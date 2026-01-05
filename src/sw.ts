@@ -10,7 +10,6 @@
 
 import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
 import {
-  precache,
   precacheAndRoute, 
   cleanupOutdatedCaches, 
   matchPrecache,
@@ -45,8 +44,8 @@ cleanupOutdatedCaches();
 // Precache resources with routing
 // (caching files in 'install' event handler of service-worker)
 precacheAndRoute([
-  { url: '/', revision: `main-${CACHE_VERSION}` },
-  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
+  { url: '/', revision: null /*`main-${CACHE_VERSION}`*/ },
+  { url: FALLBACK_HTML_URL, revision: null /* `offline-${CACHE_VERSION}` */ },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
     // revision: `${imgData.shortDescription}-${CACHE_VERSION}`,
@@ -85,7 +84,7 @@ registerRoute(
   })
 );
 
-// SCRIPTS, STYLES - Cache with StaleWhileRevalidate strategy
+// SCRIPTS, STYLES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => {
     const isScriptOrStyle = request.destination === DESTINATION_TYPE.SCRIPT ||
@@ -106,10 +105,10 @@ registerRoute(
                     url.pathname.includes('/_next/static/chunks/');
     
     // Exclude precached files
-    //const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
+    const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
-    // return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
-    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile);
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+    //return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile);
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -133,8 +132,8 @@ registerRoute(
 // IMAGES - Cache with CacheFirst strategy
 registerRoute(
   ({ request, url }) => 
-    request.destination === DESTINATION_TYPE.IMAGE,// &&
-    //!PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
+    request.destination === DESTINATION_TYPE.IMAGE &&
+    !PRECACHED_IMAGES.map(imgData => imgData.url).includes(url.pathname),
   new CacheFirst({
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
@@ -410,6 +409,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
             console.log('[SW] Found image in images cache:', request.url);
             return cachedImage;
           }
+          console.log('[SW] Could not find image in images cache:', request.url);
         } catch (e) {
           console.warn('[SW] Error searching images cache:', e);
         }

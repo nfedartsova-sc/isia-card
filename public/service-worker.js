@@ -32,9 +32,9 @@ function registerServiceWorker() {
       console.log('The App service worker has been successfully registered:', registration);
       
       // Force an immediate update check when page loads (helps catch updates faster)
-      if (registration) {
-        registration.update();
-      }
+      // if (registration) {
+      //   registration.update();
+      // }
       
       // Track if update check is in progress to prevent multiple simultaneous checks
       let updateCheckInProgress = false;
@@ -42,6 +42,11 @@ function registerServiceWorker() {
       
       // Helper function to safely check for updates
       const safeUpdate = () => {
+        // Don't check if we're offline - this causes errors
+        if (!navigator.onLine) {
+          return;
+        }
+
         // Don't check if we just reloaded (within grace period)
         if (justReloaded) {
           return;
@@ -76,9 +81,9 @@ function registerServiceWorker() {
         }
       };
       
-      // Only check for updates after a delay (not immediately)
+       // Only check for updates after a delay (not immediately) and only if online
       // Skip immediate check if we just reloaded
-      if (!justReloaded && registration.active)
+      if (!justReloaded && registration.active && navigator.onLine)
         setTimeout(safeUpdate, MIN_UPDATE_INTERVAL_MS); // Wait seconds before first check
       
       // Periodically check for updates
@@ -89,8 +94,13 @@ function registerServiceWorker() {
       // Check for updates when page becomes visible (user switches back to tab)
       // But only if enough time has passed
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden)
+        if (!document.hidden && navigator.onLine)
           setTimeout(safeUpdate, CHECK_UPDATES_DELAY_MS); // Small delay to prevent rapid checks
+      });
+
+      // Also check when coming back online
+      window.addEventListener('online', () => {
+        setTimeout(safeUpdate, CHECK_UPDATES_DELAY_MS);
       });
       
       // Listen for updates - but ignore if we just reloaded
@@ -141,7 +151,12 @@ function registerServiceWorker() {
     }
   })
   .catch((error) => {
-    console.error('Service worker registration failed:', error);
+    // Only log if online - offline registration failures are expected
+    if (navigator.onLine) {
+      console.error('Service worker registration failed:', error);
+    } else {
+      console.debug('Service worker registration skipped (offline):', error.message);
+    }
   });
   
   // Listen for controller changes (when new service worker takes control)
