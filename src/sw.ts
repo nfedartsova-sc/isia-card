@@ -20,6 +20,7 @@ import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import {
+  CACHE_VERSION,
   HOMEPAGE_HTML_URL, FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
   PRECACHED_JS_FILES, DESTINATION_TYPE, IMAGE_API_ENDPOINTS,
   NETWORK_TIMEOUT_SECONDS,
@@ -44,8 +45,8 @@ cleanupOutdatedCaches();
 // Caching files in 'install' event handler of service-worker.
 // 'revision: null' means that Workbox uses content hash - e.i. only updates if file changes.
 precacheAndRoute([
-  { url: HOMEPAGE_HTML_URL, revision: null },
-  { url: FALLBACK_HTML_URL, revision: null },
+  { url: HOMEPAGE_HTML_URL, revision: `main-${CACHE_VERSION}` },
+  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
     revision: null,
@@ -208,41 +209,69 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
   try {
     switch (destination) {
       case 'document': {
-        // Method 1: Try matchPrecache with the request URL (works for any precached page)
-        try {
-          // Try with pathname (ignores query params)
-          const precachedByPath = await matchPrecache(url.pathname);
-          if (precachedByPath) {
-            console.log('[SW] Found document in precache by pathname:', url.pathname);
-            return precachedByPath;
-          }
-          
-          // Try with full URL
-          const precachedByUrl = await matchPrecache(request.url);
-          if (precachedByUrl) {
-            console.log('[SW] Found document in precache by URL:', request.url);
-            return precachedByUrl;
-          }
-        } catch (e) {
-          console.warn('[SW] Error checking precache:', e);
-        }
-
-        // Method 2: Try getCacheKeyForURL (Workbox's recommended way)
-        try {
-          const cacheKey = getCacheKeyForURL(url.pathname);
-          if (cacheKey) {
-            const precacheCache = await caches.open(cacheNames.precache);
-            const cached = await precacheCache.match(cacheKey);
-            if (cached) {
-              console.log('[SW] Found document in precache via cacheKey:', url.pathname);
-              return cached;
+         // Helper function to find precached resource by pathname
+        const findPrecachedByPathname = async (pathname: string): Promise<Response | null> => {
+          try {
+            // Method 1: Use Workbox's matchPrecache (handles __WB_REVISION__ automatically)
+            const precached = await matchPrecache(pathname);
+            if (precached) {
+              console.log('[SW] Found in precache via matchPrecache:', pathname);
+              return precached;
             }
+          } catch (e) {
+            // Continue to manual search
           }
-        } catch (e) {
-          // getCacheKeyForURL returns null if not precached, which is fine
+
+          try {
+            // Method 2: Use getCacheKeyForURL (Workbox's recommended way)
+            const cacheKey = getCacheKeyForURL(pathname);
+            if (cacheKey) {
+              const precacheCache = await caches.open(cacheNames.precache);
+              const cached = await precacheCache.match(cacheKey);
+              if (cached) {
+                console.log('[SW] Found in precache via getCacheKeyForURL:', pathname);
+                return cached;
+              }
+            }
+          } catch (e) {
+            // Continue to manual search
+          }
+
+          try {
+            // Method 3: Manually search precache cache by iterating keys
+            // This handles __WB_REVISION__ query parameters
+            const precacheCache = await caches.open(cacheNames.precache);
+            const precacheKeys = await precacheCache.keys();
+            
+            // Normalize pathname for comparison
+            const normalizedPathname = pathname === '' ? '/' : pathname;
+            
+            for (const cachedRequest of precacheKeys) {
+              const cachedUrl = new URL(cachedRequest.url);
+              // Match by pathname, ignoring query parameters (including __WB_REVISION__)
+              if (cachedUrl.pathname === normalizedPathname) {
+                const cached = await precacheCache.match(cachedRequest);
+                if (cached) {
+                  console.log('[SW] Found in precache by manual search:', cachedRequest.url, 'for pathname:', normalizedPathname);
+                  return cached;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[SW] Error manually searching precache:', e);
+          }
+
+          return null;
+        };
+
+        // Try to find the requested page in precache
+        const targetPathname = url.pathname === '' ? '/' : url.pathname;
+        const precachedPage = await findPrecachedByPathname(targetPathname);
+        if (precachedPage) {
+          return precachedPage;
         }
 
-        // Method 3: Check runtime pages cache (for dynamically cached pages)
+        // Check runtime pages cache (for dynamically cached pages)
         try {
           const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
           const cached = await pagesCache.match(request) ||
@@ -256,7 +285,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error accessing pages cache:', e);
         }
 
-        // Method 4: Search all caches as fallback
+        // Search all caches as fallback
         try {
           const allCachesMatch = await caches.match(request) ||
                                await caches.match(url.pathname) ||
@@ -269,15 +298,11 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error searching all caches:', e);
         }
 
-        // Method 5: Fallback to offline page
-        try {
-          const offlinePage = await matchPrecache(FALLBACK_HTML_URL);
-          if (offlinePage) {
-            console.log('[SW] Serving offline page as fallback for:', url.pathname);
-            return offlinePage;
-          }
-        } catch (e) {
-          console.warn('[SW] Could not serve offline page:', e);
+        // Fallback to offline page using the same helper
+        const offlinePage = await findPrecachedByPathname(FALLBACK_HTML_URL);
+        if (offlinePage) {
+          console.log('[SW] Serving offline page as fallback for:', url.pathname);
+          return offlinePage;
         }
 
         // Last resort: Return a simple offline HTML response
