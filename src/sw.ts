@@ -16,7 +16,7 @@ import {
   getCacheKeyForURL,
 } from 'workbox-precaching';
 import { cacheNames } from 'workbox-core';
-import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { NetworkFirst, CacheFirst, NetworkOnly, StrategyHandler } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import {
