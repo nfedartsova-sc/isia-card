@@ -395,7 +395,19 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
       }
 
       case 'image': {
-        // Try to find the image in the images runtime cache first
+        // CRITICAL FIX: Check precache first for precached images
+        try {
+          const precached = await matchPrecache(request.url) || 
+                           await matchPrecache(url.pathname);
+          if (precached) {
+            console.log('[SW] Found image in precache:', request.url);
+            return precached;
+          }
+        } catch (e) {
+          console.warn('[SW] Error checking precache for image:', e);
+        }
+
+        // Try to find the image in the images runtime cache
         try {
           const imagesCache = await caches.open(runtimeCachesConfig.images.name);
           
@@ -414,7 +426,20 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error searching images cache:', e);
         }
         
-        // Try all caches as fallback
+        // Try all caches as fallback (including precache)
+        try {
+          const allCachesMatch = await caches.match(request) ||
+                               await caches.match(url.pathname) ||
+                               await caches.match(request.url);
+          if (allCachesMatch) {
+            console.log('[SW] Found image in any cache:', request.url);
+            return allCachesMatch;
+          }
+        } catch (e) {
+          console.warn('[SW] Error searching all caches:', e);
+        }
+        
+        // Try fallback image from precache
         const fallbackImage = await caches.match(FALLBACK_IMG);
         if (fallbackImage) return fallbackImage;
         
@@ -453,7 +478,19 @@ const isImageAPI = IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(
 const isAPI = url.pathname.startsWith('/api/');
 
 if (isImageAPI) {
-  // Image API endpoints - try images cache
+  // Image API endpoints - CRITICAL FIX: Check precache first
+  try {
+    const precached = await matchPrecache(request.url) || 
+                     await matchPrecache(url.pathname);
+    if (precached) {
+      console.log('[SW] Found image API response in precache:', request.url);
+      return precached;
+    }
+  } catch (e) {
+    console.warn('[SW] Error checking precache for image API:', e);
+  }
+
+  // Try images cache
   try {
     const imagesCache = await caches.open(runtimeCachesConfig.images.name);
     const cachedImage = await imagesCache.match(request) ||
@@ -469,18 +506,35 @@ if (isImageAPI) {
     console.warn('[SW] Error searching images cache for API:', e);
   }
   
+  // Try all caches as fallback
+  try {
+    const allCachesMatch = await caches.match(request) ||
+                         await caches.match(url.pathname) ||
+                         await caches.match(request.url);
+    if (allCachesMatch) {
+      console.log('[SW] Found image API response in any cache:', request.url);
+      return allCachesMatch;
+    }
+  } catch (e) {
+    console.warn('[SW] Error searching all caches for image API:', e);
+  }
+  
   // Fallback image for image API endpoints
   const fallbackImage = await caches.match(FALLBACK_IMG);
   if (fallbackImage) return fallbackImage;
 }
 
 if (isAPI) {
-  // Regular API endpoints - try API cache
+  // Regular API endpoints - try API cache with improved matching
   try {
     const apiCache = await caches.open(runtimeCachesConfig.api.name);
+    
+    // Try multiple matching strategies
     const cachedAPI = await apiCache.match(request) ||
                     await apiCache.match(url.pathname) ||
                     await apiCache.match(request.url) ||
+                    await apiCache.match(new Request(url.pathname)) ||
+                    await apiCache.match(new Request(request.url)) ||
                     await apiCache.match(request, { ignoreSearch: true });
     
     if (cachedAPI) {
@@ -489,6 +543,19 @@ if (isAPI) {
     }
   } catch (e) {
     console.warn('[SW] Error searching API cache:', e);
+  }
+  
+  // Try all caches as fallback (in case it's cached elsewhere)
+  try {
+    const allCachesMatch = await caches.match(request) ||
+                         await caches.match(url.pathname) ||
+                         await caches.match(request.url);
+    if (allCachesMatch) {
+      console.log('[SW] Found API response in any cache:', request.url);
+      return allCachesMatch;
+    }
+  } catch (e) {
+    console.warn('[SW] Error searching all caches for API:', e);
   }
 }
 
