@@ -20,8 +20,7 @@ import { NetworkFirst, CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import {
-  CACHE_VERSION,
-  FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
+  HOMEPAGE_HTML_URL, FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
   PRECACHED_JS_FILES, DESTINATION_TYPE, IMAGE_API_ENDPOINTS,
   NETWORK_TIMEOUT_SECONDS,
 } from './constants';
@@ -41,20 +40,19 @@ setupMessageHandler();
 // It does not delete runtime caches
 cleanupOutdatedCaches();
 
-// Precache resources with routing
-// (caching files in 'install' event handler of service-worker)
+// Precache resources with routing.
+// Caching files in 'install' event handler of service-worker.
+// 'revision: null' means that Workbox uses content hash - e.i. only updates if file changes.
 precacheAndRoute([
-  { url: '/', revision: null /*`main-${CACHE_VERSION}`*/ },
-  { url: FALLBACK_HTML_URL, revision: null /* `offline-${CACHE_VERSION}` */ },
+  { url: HOMEPAGE_HTML_URL, revision: null },
+  { url: FALLBACK_HTML_URL, revision: null },
   ...PRECACHED_IMAGES.map((imgData) => ({
     url: imgData.url,
-    // revision: `${imgData.shortDescription}-${CACHE_VERSION}`,
-    revision: null, // Let Workbox use content hash - only updates if file changes
+    revision: null,
   })),
   ...PRECACHED_JS_FILES.map((jsData) => ({
     url: jsData.url,
-    //revision: jsData.revision || CACHE_VERSION,
-    revision: jsData.revision || null, // Use null instead of CACHE_VERSION
+    revision: jsData.revision || null,
   })),
 ], {
   // Ignore all URL parameters
@@ -64,8 +62,7 @@ precacheAndRoute([
 // HTML pages use NetworkFirst (normal behavior)
 registerRoute(
   ({ request, url }) => {
-    // Handle navigation requests - EXCLUDING the homepage
-    return request.mode === 'navigate' && url.pathname !== '/';
+    return request.mode === 'navigate' && url.pathname !== HOMEPAGE_HTML_URL;
   },
   new NetworkFirst({
     cacheName: runtimeCachesConfig.pages.name,
@@ -207,15 +204,15 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           const precacheKeys = await precacheCache.keys();
           
           // Find any precached entry that matches the homepage pathname
-          // This handles URLs like '/?__WB_REVISION__=...' when searching for '/'
-          const targetPathname = url.pathname === '' ? '/' : url.pathname;
+          // This handles URLs like '/?__WB_REVISION__=...' when searching for HOMEPAGE_HTML_URL
+          const targetPathname = url.pathname === '' ? HOMEPAGE_HTML_URL : url.pathname;
           
           for (const cachedRequest of precacheKeys) {
             const cachedUrl = new URL(cachedRequest.url);
             // Match by pathname, ignoring query parameters (including __WB_REVISION__)
             if (cachedUrl.pathname === targetPathname || 
-                cachedUrl.pathname === '/' || 
-                (targetPathname === '/' && (cachedUrl.pathname === '' || cachedUrl.pathname === '/'))) {
+                cachedUrl.pathname === HOMEPAGE_HTML_URL || 
+                (targetPathname === HOMEPAGE_HTML_URL && (cachedUrl.pathname === '' || cachedUrl.pathname === HOMEPAGE_HTML_URL))) {
               const cached = await precacheCache.match(cachedRequest);
               if (cached) {
                 console.log('[SW] Found homepage in precache (by pathname):', cachedRequest.url);
@@ -229,7 +226,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
 
         // CRITICAL: Try to get the precached homepage first using the origin URL
         const origin = url.origin;
-        const baseUrl = origin + '/';
+        const baseUrl = origin + HOMEPAGE_HTML_URL;
         
         // Method 1: Try matchPrecache with absolute URL
         try {
@@ -244,9 +241,9 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
         
         // Method 2: Try matchPrecache with relative URL variations
         const urlVariations = [
-          '/',
+          HOMEPAGE_HTML_URL,
           url.pathname,
-          url.pathname === '/' ? '/' : url.pathname,
+          url.pathname === HOMEPAGE_HTML_URL ? HOMEPAGE_HTML_URL : url.pathname,
           url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname + '/',
         ];
         

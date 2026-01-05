@@ -1,6 +1,7 @@
 // Version for cache management
 export const CACHE_VERSION = `v1.0.${Date.now()}`;
 
+export const HOMEPAGE_HTML_URL = '/';
 export const FALLBACK_HTML_URL = '/offline';
 export const FALLBACK_IMG = '/images/fallback-image.jpg';
 export const PRECACHED_IMAGES = [
