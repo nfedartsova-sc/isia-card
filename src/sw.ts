@@ -105,7 +105,6 @@ registerRoute(
     const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
     return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
-    //return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile);
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -120,7 +119,8 @@ registerRoute(
       new CacheableResponsePlugin({ statuses: [200] }),
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.static.maxEntries,
-        maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year - safe because Next.js uses content hashing
+        maxAgeSeconds: runtimeCachesConfig.static.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
       }),
     ],
   })
@@ -135,7 +135,11 @@ registerRoute(
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
       new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.images.maxEntries }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.images.maxEntries,
+        maxAgeSeconds: runtimeCachesConfig.images.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
+      }),
     ],
   })
 );
@@ -147,7 +151,11 @@ registerRoute(
     cacheName: runtimeCachesConfig.images.name,
     plugins: [
       new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.images.maxEntries }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.images.maxEntries,
+        maxAgeSeconds: runtimeCachesConfig.images.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
+      }),
     ],
   })
 );
@@ -163,7 +171,11 @@ registerRoute(
     networkTimeoutSeconds: NETWORK_TIMEOUT_SECONDS,
     plugins: [
       new CacheableResponsePlugin({ statuses: [200, 304] }),
-      new ExpirationPlugin({ maxEntries: runtimeCachesConfig.api.maxEntries }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.api.maxEntries,
+        maxAgeSeconds: runtimeCachesConfig.api.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
+      }),
     ],
   })
 );
@@ -175,7 +187,11 @@ registerRoute(
     cacheName: runtimeCachesConfig.static.name,
     plugins: [
       new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({ maxEntries: 20 }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.font.maxEntries,
+        maxAgeSeconds: runtimeCachesConfig.font.maxAge,
+        //purgeOnQuotaError: true, // Удалить при нехватке места
+      }),
     ],
   })
 );
@@ -192,194 +208,80 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
   try {
     switch (destination) {
       case 'document': {
-        // For HTML pages, prioritize finding the cached homepage (card page)
-        // We want to show the card, NOT the offline page
-        console.log('[SW] Attempting to find cached homepage...');
-  
-        // CRITICAL FIX: Search precache cache directly, matching by pathname (ignoring query params)
-        // Workbox stores precached URLs with __WB_REVISION__ query parameter, 
-        // so we need to search directly by pathname
+        // Method 1: Try matchPrecache with the request URL (works for any precached page)
         try {
-          const precacheCache = await caches.open(cacheNames.precache);
-          const precacheKeys = await precacheCache.keys();
+          // Try with pathname (ignores query params)
+          const precachedByPath = await matchPrecache(url.pathname);
+          if (precachedByPath) {
+            console.log('[SW] Found document in precache by pathname:', url.pathname);
+            return precachedByPath;
+          }
           
-          // Find any precached entry that matches the homepage pathname
-          // This handles URLs like '/?__WB_REVISION__=...' when searching for HOMEPAGE_HTML_URL
-          const targetPathname = url.pathname === '' ? HOMEPAGE_HTML_URL : url.pathname;
-          
-          for (const cachedRequest of precacheKeys) {
-            const cachedUrl = new URL(cachedRequest.url);
-            // Match by pathname, ignoring query parameters (including __WB_REVISION__)
-            if (cachedUrl.pathname === targetPathname || 
-                cachedUrl.pathname === HOMEPAGE_HTML_URL || 
-                (targetPathname === HOMEPAGE_HTML_URL && (cachedUrl.pathname === '' || cachedUrl.pathname === HOMEPAGE_HTML_URL))) {
-              const cached = await precacheCache.match(cachedRequest);
-              if (cached) {
-                console.log('[SW] Found homepage in precache (by pathname):', cachedRequest.url);
-                return cached;
-              }
-            }
+          // Try with full URL
+          const precachedByUrl = await matchPrecache(request.url);
+          if (precachedByUrl) {
+            console.log('[SW] Found document in precache by URL:', request.url);
+            return precachedByUrl;
           }
         } catch (e) {
-          console.warn('[SW] Error searching precache directly by pathname:', e);
+          console.warn('[SW] Error checking precache:', e);
         }
 
-        // CRITICAL: Try to get the precached homepage first using the origin URL
-        const origin = url.origin;
-        const baseUrl = origin + HOMEPAGE_HTML_URL;
-        
-        // Method 1: Try matchPrecache with absolute URL
+        // Method 2: Try getCacheKeyForURL (Workbox's recommended way)
         try {
-          const precached = await matchPrecache(baseUrl);
-          if (precached) {
-            console.log('[SW] Found in precache via absolute URL:', baseUrl);
-            return precached;
-          }
-        } catch (e) {
-          console.warn('[SW] matchPrecache with absolute URL failed:', e);
-        }
-        
-        // Method 2: Try matchPrecache with relative URL variations
-        const urlVariations = [
-          HOMEPAGE_HTML_URL,
-          url.pathname,
-          url.pathname === HOMEPAGE_HTML_URL ? HOMEPAGE_HTML_URL : url.pathname,
-          url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname + '/',
-        ];
-        
-        for (const urlToTry of urlVariations) {
-          try {
-            const precached = await matchPrecache(urlToTry);
-            if (precached) {
-              console.log('[SW] Found in precache via matchPrecache:', urlToTry);
-              return precached;
-            }
-          } catch (e) {
-            // Continue to next variation
-          }
-        }
-
-        // Method 3: Use getCacheKeyForURL + direct cache access
-        for (const urlToTry of urlVariations) {
-          try {
-            const cacheKey = getCacheKeyForURL(urlToTry);
-            if (cacheKey) {
-              const precacheCache = await caches.open(cacheNames.precache);
-              const cached = await precacheCache.match(cacheKey);
-              if (cached) {
-                console.log('[SW] Found in precache via cacheKey:', urlToTry);
-                return cached;
-              }
-            }
-          } catch (e) {
-            // Continue to next variation
-          }
-        }
-
-        // Method 4: Direct cache matching with Request objects (important for mobile)
-        for (const urlToTry of urlVariations) {
-          try {
-            // Try with relative URL
-            const cached1 = await caches.match(urlToTry);
-            if (cached1) {
-              console.log('[SW] Found via caches.match (relative):', urlToTry);
-              return cached1;
-            }
-            
-            // Try with absolute URL
-            const absoluteUrl = new URL(urlToTry, origin).href;
-            const cached2 = await caches.match(absoluteUrl);
-            if (cached2) {
-              console.log('[SW] Found via caches.match (absolute):', absoluteUrl);
-              return cached2;
-            }
-            
-            // Try with Request object
-            const requestObj = new Request(urlToTry, { mode: 'navigate' });
-            const cached3 = await caches.match(requestObj);
-            if (cached3) {
-              console.log('[SW] Found via caches.match (Request object):', urlToTry);
-              return cached3;
-            }
-          } catch (e) {
-            // Continue to next variation
-          }
-        }
-
-        // Method 5: Check runtime pages cache
-        try {
-          const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
-          for (const urlToTry of urlVariations) {
-            const cached = await pagesCache.match(urlToTry) || 
-                          await pagesCache.match(new Request(urlToTry)) ||
-                          await pagesCache.match(new URL(urlToTry, origin).href);
+          const cacheKey = getCacheKeyForURL(url.pathname);
+          if (cacheKey) {
+            const precacheCache = await caches.open(cacheNames.precache);
+            const cached = await precacheCache.match(cacheKey);
             if (cached) {
-              console.log('[SW] Found in pages runtime cache:', urlToTry);
+              console.log('[SW] Found document in precache via cacheKey:', url.pathname);
               return cached;
             }
+          }
+        } catch (e) {
+          // getCacheKeyForURL returns null if not precached, which is fine
+        }
+
+        // Method 3: Check runtime pages cache (for dynamically cached pages)
+        try {
+          const pagesCache = await caches.open(runtimeCachesConfig.pages.name);
+          const cached = await pagesCache.match(request) ||
+                        await pagesCache.match(url.pathname) ||
+                        await pagesCache.match(request.url);
+          if (cached) {
+            console.log('[SW] Found document in pages runtime cache:', url.pathname);
+            return cached;
           }
         } catch (e) {
           console.warn('[SW] Error accessing pages cache:', e);
         }
 
-        // Method 6: Search ALL caches comprehensively with absolute URLs
+        // Method 4: Search all caches as fallback
         try {
-          const cacheNamesList = await caches.keys();
-          console.log('[SW] Available caches:', cacheNamesList);
-          
-          for (const cacheName of cacheNamesList) {
-            const cache = await caches.open(cacheName);
-            for (const urlToTry of urlVariations) {
-              // Try multiple matching strategies
-              const matchResults = [
-                await cache.match(urlToTry),
-                await cache.match(new Request(urlToTry)),
-                await cache.match(new URL(urlToTry, origin).href),
-                await cache.match(new Request(new URL(urlToTry, origin).href)),
-              ];
-              
-              // Find the first non-undefined match
-              const match = matchResults.find((response): response is Response => response !== undefined);
-              
-              if (match) {
-                console.log(`[SW] Found in cache ${cacheName}:`, urlToTry);
-                return match;
-              }
-            }
+          const allCachesMatch = await caches.match(request) ||
+                               await caches.match(url.pathname) ||
+                               await caches.match(request.url);
+          if (allCachesMatch) {
+            console.log('[SW] Found document in any cache:', url.pathname);
+            return allCachesMatch;
           }
         } catch (e) {
           console.warn('[SW] Error searching all caches:', e);
         }
 
-        // Debug: Log precache contents
-        try {
-          const precacheCache = await caches.open(cacheNames.precache);
-          const precacheKeys = await precacheCache.keys();
-          console.log('[SW] All precache keys:', precacheKeys.map(r => r.url));
-          console.log('[SW] Request URL:', request.url);
-          console.log('[SW] URL pathname:', url.pathname);
-          console.log('[SW] URL origin:', url.origin);
-          console.log('[SW] URL href:', url.href);
-        } catch (e) {
-          console.warn('[SW] Could not inspect precache:', e);
-        }
-
-        console.error('[SW] Could not find cached homepage anywhere');
-        console.warn('[SW] Available caches:', await caches.keys());
-
-        // Last resort: Return the offline page instead of "Loading application..."
-        // This is better UX than an infinite loading message
+        // Method 5: Fallback to offline page
         try {
           const offlinePage = await matchPrecache(FALLBACK_HTML_URL);
           if (offlinePage) {
-            console.log('[SW] Serving offline page as fallback');
+            console.log('[SW] Serving offline page as fallback for:', url.pathname);
             return offlinePage;
           }
         } catch (e) {
           console.warn('[SW] Could not serve offline page:', e);
         }
 
-        // If we can't even find the offline page, return a simple HTML response
+        // Last resort: Return a simple offline HTML response
+        console.error('[SW] Could not find any cached document for:', url.pathname);
         return new Response(
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offline</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>You are offline</h1><p>Please check your connection and try again.</p></body></html>',
           { 
@@ -392,7 +294,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
       }
 
       case 'image': {
-        // CRITICAL FIX: Check precache first for precached images
+        // Check precache first for precached images
         try {
           const precached = await matchPrecache(request.url) || 
                            await matchPrecache(url.pathname);
@@ -469,98 +371,96 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
         return Response.error();
 
       default: {
+        // Handle API endpoints (including image API endpoints that might not have destination='image')
+        const isImageAPI = IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint));
+        const isAPI = url.pathname.startsWith('/api/');
 
-// Handle API endpoints (including image API endpoints that might not have destination='image')
-const isImageAPI = IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint));
-const isAPI = url.pathname.startsWith('/api/');
+        if (isImageAPI) {
+          // Image API endpoints - check precache first
+          try {
+            const precached = await matchPrecache(request.url) || 
+                            await matchPrecache(url.pathname);
+            if (precached) {
+              console.log('[SW] Found image API response in precache:', request.url);
+              return precached;
+            }
+          } catch (e) {
+            console.warn('[SW] Error checking precache for image API:', e);
+          }
 
-if (isImageAPI) {
-  // Image API endpoints - CRITICAL FIX: Check precache first
-  try {
-    const precached = await matchPrecache(request.url) || 
-                     await matchPrecache(url.pathname);
-    if (precached) {
-      console.log('[SW] Found image API response in precache:', request.url);
-      return precached;
-    }
-  } catch (e) {
-    console.warn('[SW] Error checking precache for image API:', e);
-  }
+          // Try images cache
+          try {
+            const imagesCache = await caches.open(runtimeCachesConfig.images.name);
+            const cachedImage = await imagesCache.match(request) ||
+                              await imagesCache.match(url.pathname) ||
+                              await imagesCache.match(request.url) ||
+                              await imagesCache.match(request, { ignoreSearch: true });
+            
+            if (cachedImage) {
+              console.log('[SW] Found image API response in images cache:', request.url);
+              return cachedImage;
+            }
+          } catch (e) {
+            console.warn('[SW] Error searching images cache for API:', e);
+          }
+          
+          // Try all caches as fallback
+          try {
+            const allCachesMatch = await caches.match(request) ||
+                                await caches.match(url.pathname) ||
+                                await caches.match(request.url);
+            if (allCachesMatch) {
+              console.log('[SW] Found image API response in any cache:', request.url);
+              return allCachesMatch;
+            }
+          } catch (e) {
+            console.warn('[SW] Error searching all caches for image API:', e);
+          }
+          
+          // Fallback image for image API endpoints
+          const fallbackImage = await caches.match(FALLBACK_IMG);
+          if (fallbackImage) return fallbackImage;
+        }
 
-  // Try images cache
-  try {
-    const imagesCache = await caches.open(runtimeCachesConfig.images.name);
-    const cachedImage = await imagesCache.match(request) ||
-                      await imagesCache.match(url.pathname) ||
-                      await imagesCache.match(request.url) ||
-                      await imagesCache.match(request, { ignoreSearch: true });
-    
-    if (cachedImage) {
-      console.log('[SW] Found image API response in images cache:', request.url);
-      return cachedImage;
-    }
-  } catch (e) {
-    console.warn('[SW] Error searching images cache for API:', e);
-  }
-  
-  // Try all caches as fallback
-  try {
-    const allCachesMatch = await caches.match(request) ||
-                         await caches.match(url.pathname) ||
-                         await caches.match(request.url);
-    if (allCachesMatch) {
-      console.log('[SW] Found image API response in any cache:', request.url);
-      return allCachesMatch;
-    }
-  } catch (e) {
-    console.warn('[SW] Error searching all caches for image API:', e);
-  }
-  
-  // Fallback image for image API endpoints
-  const fallbackImage = await caches.match(FALLBACK_IMG);
-  if (fallbackImage) return fallbackImage;
-}
+        if (isAPI) {
+          // Regular API endpoints - try API cache with improved matching
+          try {
+            const apiCache = await caches.open(runtimeCachesConfig.api.name);
+            
+            // Try multiple matching strategies
+            const cachedAPI = await apiCache.match(request) ||
+                            await apiCache.match(url.pathname) ||
+                            await apiCache.match(request.url) ||
+                            await apiCache.match(new Request(url.pathname)) ||
+                            await apiCache.match(new Request(request.url)) ||
+                            await apiCache.match(request, { ignoreSearch: true });
+            
+            if (cachedAPI) {
+              console.log('[SW] Found API response in cache:', request.url);
+              return cachedAPI;
+            }
+          } catch (e) {
+            console.warn('[SW] Error searching API cache:', e);
+          }
+          
+          // Try all caches as fallback (in case it's cached elsewhere)
+          try {
+            const allCachesMatch = await caches.match(request) ||
+                                await caches.match(url.pathname) ||
+                                await caches.match(request.url);
+            if (allCachesMatch) {
+              console.log('[SW] Found API response in any cache:', request.url);
+              return allCachesMatch;
+            }
+          } catch (e) {
+            console.warn('[SW] Error searching all caches for API:', e);
+          }
+        }
 
-if (isAPI) {
-  // Regular API endpoints - try API cache with improved matching
-  try {
-    const apiCache = await caches.open(runtimeCachesConfig.api.name);
-    
-    // Try multiple matching strategies
-    const cachedAPI = await apiCache.match(request) ||
-                    await apiCache.match(url.pathname) ||
-                    await apiCache.match(request.url) ||
-                    await apiCache.match(new Request(url.pathname)) ||
-                    await apiCache.match(new Request(request.url)) ||
-                    await apiCache.match(request, { ignoreSearch: true });
-    
-    if (cachedAPI) {
-      console.log('[SW] Found API response in cache:', request.url);
-      return cachedAPI;
-    }
-  } catch (e) {
-    console.warn('[SW] Error searching API cache:', e);
-  }
-  
-  // Try all caches as fallback (in case it's cached elsewhere)
-  try {
-    const allCachesMatch = await caches.match(request) ||
-                         await caches.match(url.pathname) ||
-                         await caches.match(request.url);
-    if (allCachesMatch) {
-      console.log('[SW] Found API response in any cache:', request.url);
-      return allCachesMatch;
-    }
-  } catch (e) {
-    console.warn('[SW] Error searching all caches for API:', e);
-  }
-}
+        // If nothing found, return error (let the app handle it)
+        return Response.error();
 
-// If nothing found, return error (let the app handle it)
-return Response.error();
-
-
-
+        // TODO: delete if not necessary
         // Don't handle API calls here - NetworkFirst strategy should handle them
         // If NetworkFirst fails, it means the data isn't cached and network is unavailable
         // Returning Response.error() will cause the fetch to fail, which the app can handle

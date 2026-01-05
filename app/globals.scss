@@ -107,5 +107,28 @@ body {
       color: $disabled;
       opacity: 0.6;
     }
+
+    &.half-disabled {
+      cursor: default;
+      color: $disabled;
+      opacity: 0.8;
+      pointer-events: none;
+    }
   }
 }
+
+// Add styles for pwa-install-dlg-button if it's not using .btn class
+.pwa-install-dlg-button {
+  &.disabled {
+    cursor: default;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  &.half-disabled {
+    cursor: default;
+    opacity: 0.8;
+    pointer-events: none;
+  }
+}
+

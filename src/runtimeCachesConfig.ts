@@ -18,17 +18,22 @@ export const runtimeCachesConfig = {
   },
   static: {
     name: `static-runtime-${CACHE_VERSION}`,
-    //maxAge: 7 * 24 * 60 * 60, // 7 дней
+    maxAge: 365 * 24 * 60 * 60, // 1 year - safe because Next.js uses content hashing
     maxEntries: 50,
   },
   images: {
     name: `images-runtime-${CACHE_VERSION}`,
-    //maxAge: 30 * 24 * 60 * 60, // 30 дней
+    maxAge: 30 * 24 * 60 * 60, // 30 days
     maxEntries: 50,
   },
   api: {
     name: `api-runtime-${CACHE_VERSION}`,
-    //maxAge: 5 * 60, // 5 минут
+    maxAge: 5 * 60, // 5 minutes
     maxEntries: 50,
   },
+  font: {
+    name: `font-runtime-${CACHE_VERSION}`,
+    maxAge: 365 * 24 * 60 * 60, // 1 year - safe because Next.js uses content hashing
+    maxEntries: 50,
+  }
 };

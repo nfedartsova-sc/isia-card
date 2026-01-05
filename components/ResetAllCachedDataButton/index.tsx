@@ -17,6 +17,8 @@ interface ResetAllCachedDataButtonProps {
   children?: React.ReactNode;
 }
 
+type ResetProgress = 'idle' | 'clearing-caches' | 'clearing-indexeddb' | 'complete';
+
 const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   className = '',
   style = {},
@@ -27,6 +29,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   const [showResetCachePrompt, setShowResetCachePrompt] = useState(false);
   const [isCheckingServer, setIsCheckingServer] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [resetProgress, setResetProgress] = useState<ResetProgress>('idle');
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.CACHES_CLEARED)
@@ -239,6 +242,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     setShowResetCachePrompt(false);
 
     setClearingCache(true);
+    setResetProgress('clearing-caches'); // Start: fully disabled
 
     let reloadApp = true;
 
@@ -255,6 +259,8 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: errorMessage, level: 'app' }, consoleLog: false });
         addMessage({ message: { type: 'error', text: errorMessage, level: 'debug' } });
         reloadApp = false;
+        setResetProgress('idle');
+        setClearingCache(false);
         return;
       }
       addMessage({ message: { type: 'success', text: 'Server is available. Proceeding with cache reset...', level: 'debug' } });
@@ -269,6 +275,9 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: 'Cache Storage was not cleared', level: 'debug' } });
       }
 
+      // Update progress: cache storage cleared, now half-disabled
+      setResetProgress('clearing-indexeddb');
+
       // Clear IndexedDB databases (including workbox-expiration)
       try {
         await clearIndexedDBDatabases();
@@ -277,6 +286,9 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: `IndexedDB clearing error: ${indexedDBError}`, level: 'debug' } });
         // Continue anyway - IndexedDB errors shouldn't block the reset
       }
+
+      // Update progress: IndexedDB cleared, now fully enabled
+      setResetProgress('complete');
 
       // Clear storage related to PWA installability
       sessionStorage.removeItem(STORAGE_KEY);
@@ -289,9 +301,13 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       setIsCheckingServer(false);
       addMessage({ message: { type: 'error', text: 'An error occurred while clearing cached data. Please try again.', level: 'app' }, consoleLog: false });
       addMessage({ message: { type: 'error', text: 'Error clearing cached data: ' + error, level: 'debug' } });
+      setResetProgress('idle');
 
     } finally {
-      setClearingCache(false);
+      // Note: We don't set clearingCache to false here because we want to keep it disabled until reload
+      // The button will be fully enabled (resetProgress === 'complete') but clearingCache will prevent clicks
+      //setClearingCache(false);
+
       // Reload even on error to ensure fresh state.
       // This ensures the app gets a fresh start.
       // Delay reload so user can see a message.
@@ -349,6 +365,8 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         setTimeout(() => {
           window.location.reload();
         }, 2000);
+      } else {
+        setClearingCache(false);
       }
     }
   }, [checkServerAvailability, clearCacheStorage, clearIndexedDBDatabases, addMessage]);
@@ -359,6 +377,19 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
 
   if (!online)
     return null;
+
+  // Determine button state based on reset progress
+  const getButtonClassName = () => {
+    const baseClass = `pwa-install-dlg-button ${className}`;
+    if (resetProgress === 'clearing-caches') {
+      return `${baseClass} disabled`; // Fully disabled
+    } else if (resetProgress === 'clearing-indexeddb') {
+      return `${baseClass} half-disabled`; // Half-disabled
+    } else if (resetProgress === 'complete') {
+      return baseClass; // Fully enabled (but still disabled via disabled prop if clearingCache is true)
+    }
+    return baseClass;
+  };
 
   return (
     <div>
@@ -374,10 +405,10 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       />
       <button
         onClick={handleShowResetCachePrompt}
-        className={`pwa-install-dlg-button ${className}`}
+        className={getButtonClassName()}
         style={style}
         aria-label="Reset all cached data"
-        disabled={clearingCache}
+        disabled={clearingCache || resetProgress === 'clearing-caches' || resetProgress === 'clearing-indexeddb'}
       >
         {children || 'Reset all cached data'}
       </button>
