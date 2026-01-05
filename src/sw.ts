@@ -320,13 +320,57 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
 
       case 'image': {
         // Method 1: Try precache first using the helper function
-        const precachedImage = await findPrecachedByPathname(url.pathname);
-        if (precachedImage) {
-          console.log('[SW] Found image in precache:', url.pathname);
-          return precachedImage;
+        // Try both pathname and full URL variations
+        const pathnameVariations = [
+          url.pathname,
+          url.pathname.startsWith('/') ? url.pathname : `/${url.pathname}`,
+          new URL(url.pathname, url.origin).pathname,
+        ];
+        
+        for (const pathname of pathnameVariations) {
+          const precachedImage = await findPrecachedByPathname(pathname);
+          if (precachedImage) {
+            console.log('[SW] Found image in precache via pathname:', pathname);
+            return precachedImage;
+          }
         }
 
-        // Method 2: Try to find the image in the images runtime cache
+        // Also try with the full request URL (in case it's different)
+        try {
+          const requestUrlPathname = new URL(request.url).pathname;
+          if (requestUrlPathname !== url.pathname) {
+            const precachedImage = await findPrecachedByPathname(requestUrlPathname);
+            if (precachedImage) {
+              console.log('[SW] Found image in precache via request URL pathname:', requestUrlPathname);
+              return precachedImage;
+            }
+          }
+        } catch (e) {
+          // Ignore URL parsing errors
+        }
+
+        // Method 2: Try direct precache match with various URL formats
+        try {
+          const precached1 = await matchPrecache(url.pathname);
+          if (precached1) {
+            console.log('[SW] Found image via matchPrecache(pathname):', url.pathname);
+            return precached1;
+          }
+        } catch (e) {
+          // Continue
+        }
+
+        try {
+          const precached2 = await matchPrecache(request.url);
+          if (precached2) {
+            console.log('[SW] Found image via matchPrecache(request.url):', request.url);
+            return precached2;
+          }
+        } catch (e) {
+          // Continue
+        }
+
+        // Method 3: Try to find the image in the images runtime cache
         try {
           const imagesCache = await caches.open(runtimeCachesConfig.images.name);
           
@@ -334,6 +378,8 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           const cachedImage = await imagesCache.match(request) ||
                             await imagesCache.match(url.pathname) ||
                             await imagesCache.match(request.url) ||
+                            await imagesCache.match(new Request(url.pathname)) ||
+                            await imagesCache.match(new Request(request.url)) ||
                             await imagesCache.match(request, { ignoreSearch: true });
           
           if (cachedImage) {
@@ -345,20 +391,35 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           console.warn('[SW] Error searching images cache:', e);
         }
         
-        // Method 3: Search all caches as fallback (including precache)
+        // Method 4: Search ALL caches comprehensively
         try {
-          const allCachesMatch = await caches.match(request) ||
-                               await caches.match(url.pathname) ||
-                               await caches.match(request.url);
-          if (allCachesMatch) {
-            console.log('[SW] Found image in any cache:', request.url);
-            return allCachesMatch;
+          const allCacheNames = await caches.keys();
+          console.log('[SW] Searching all caches for image:', url.pathname, 'Available caches:', allCacheNames);
+          
+          for (const cacheName of allCacheNames) {
+            const cache = await caches.open(cacheName);
+            
+            // Try multiple matching strategies
+            const matchResults = [
+              await cache.match(request),
+              await cache.match(url.pathname),
+              await cache.match(request.url),
+              await cache.match(new Request(url.pathname)),
+              await cache.match(new Request(request.url)),
+              await cache.match(request, { ignoreSearch: true }),
+            ];
+            
+            const match = matchResults.find((response): response is Response => response !== undefined);
+            if (match) {
+              console.log(`[SW] Found image in cache ${cacheName}:`, url.pathname);
+              return match;
+            }
           }
         } catch (e) {
           console.warn('[SW] Error searching all caches:', e);
         }
         
-        // Method 4: Try fallback image from precache using helper
+        // Method 5: Try fallback image from precache using helper
         const fallbackImage = await findPrecachedByPathname(FALLBACK_IMG);
         if (fallbackImage) {
           console.log('[SW] Serving fallback image from precache');
@@ -366,7 +427,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
         }
         
         // Last resort: Return SVG placeholder
-        console.error('[SW] Could not find image anywhere, including fallback:', url.pathname);
+        console.error('[SW] Could not find image anywhere, including fallback:', url.pathname, 'request.url:', request.url);
         return new Response(
           '<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#ccc"/><text x="50" y="50" text-anchor="middle">No Image</text></svg>',
           { headers: { 'Content-Type': 'image/svg+xml' } }
