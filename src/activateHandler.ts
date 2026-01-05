@@ -18,8 +18,67 @@ export function setupActivateHandler() {
   self.addEventListener('activate', (event) => {
     event.waitUntil(
       Promise.all([
+        // 1. Clean old runtime caches - IMPROVED VERSION
+        (async () => {
+          const cacheNamesList = await caches.keys();
+          const validCacheNames = Object.values(runtimeCachesConfig).map(c => c.name);
+          
+          console.log('[SW] Current valid cache names:', validCacheNames);
+          console.log('[SW] All cache names:', cacheNamesList);
+          
+          // Find all runtime caches that are NOT in the current valid list
+          const cachesToDelete = cacheNamesList.filter(cacheName => {
+            // Match runtime caches (pages, static, images, api, font)
+            const isRuntimeCache = 
+              cacheName.includes('pages-runtime-') ||
+              cacheName.includes('static-runtime-') ||
+              cacheName.includes('images-runtime-') ||
+              cacheName.includes('api-runtime-') ||
+              cacheName.includes('font-runtime-');
+            
+            // Delete if it's a runtime cache but not in the current valid list
+            return isRuntimeCache && !validCacheNames.includes(cacheName);
+          });
+          
+          console.log('[SW] Caches to delete:', cachesToDelete);
+          
+          if (cachesToDelete.length === 0) {
+            console.log('[SW] No old runtime caches to clean up');
+            return;
+          }
+          
+          // Delete caches and verify they're actually deleted
+          const deletePromises = cachesToDelete.map(async (cacheName) => {
+            try {
+              const deleted = await caches.delete(cacheName);
+              if (deleted) {
+                console.log(`[SW] Cache ${cacheName} deleted successfully`);
+              } else {
+                console.warn(`[SW] Cache ${cacheName} deletion returned false (may not have existed)`);
+              }
+              return deleted;
+            } catch (error) {
+              console.error(`[SW] Error deleting cache ${cacheName}:`, error);
+              return false;
+            }
+          });
+          
+          await Promise.all(deletePromises);
+          
+          // Verify deletion by checking again
+          const remainingCaches = await caches.keys();
+          const stillExists = cachesToDelete.filter(name => remainingCaches.includes(name));
+          if (stillExists.length > 0) {
+            console.warn('[SW] Some caches still exist after deletion attempt:', stillExists);
+            // Try one more time
+            await Promise.allSettled(
+              stillExists.map(name => caches.delete(name))
+            );
+          }
+        })(),
+        
         // 1. Clean old runtime caches
-        caches.keys().then((cacheNamesList) => {
+        /*caches.keys().then((cacheNamesList) => {
           const validCacheNames = Object.values(runtimeCachesConfig).map(c => c.name);
           const cachesToDelete = cacheNamesList.filter(
             cacheName => cacheName.includes('runtime') && !validCacheNames.includes(cacheName)
@@ -32,7 +91,8 @@ export function setupActivateHandler() {
               });
             })
           );
-        }),
+        }),*/
+
          // 2. Clean old precache caches (IMPORTANT: This ensures new precache entries replace old ones)
          /*caches.keys().then((cacheNamesList) => {
           const precacheCaches = cacheNamesList.filter(name => 
