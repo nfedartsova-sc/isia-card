@@ -27,38 +27,13 @@ export function setupMessageHandler() {
       // without waiting for tabs to close.
       self.skipWaiting();
     }
+    
     // Handle cache clear request (clears ALL caches - both precache and runtime caches)
-    // else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
-    //   event.waitUntil(
-    //     caches.keys().then((cacheNames) => {
-    //       return Promise.all(
-    //         cacheNames.map((cacheName) => caches.delete(cacheName))
-    //       );
-    //     }).then(() => {
-    //       // Notify the client that caches are cleared
-    //       self.clients.matchAll().then((clients) => {
-    //         clients.forEach((client) => {
-    //           client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
-    //         });
-    //       });
-    //     })
-    //   );
-    // }
-
-     // Handle cache clear request (clears runtime caches but preserves precache for offline functionality)
-     else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
+    else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
       event.waitUntil(
-        caches.keys().then((cacheNamesList) => {
-          // IMPORTANT: Preserve the precache so the app works offline
-          // Only clear runtime caches, not the workbox-precache which contains the homepage
-          const precacheCacheName = cacheNames.precache;
-          
-          const cachesToDelete = cacheNamesList.filter(
-            (cacheName) => cacheName !== precacheCacheName
-          );
-          
+        caches.keys().then((cacheNames) => {
           return Promise.all(
-            cachesToDelete.map((cacheName) => caches.delete(cacheName))
+            cacheNames.map((cacheName) => caches.delete(cacheName))
           );
         }).then(() => {
           // Notify the client that caches are cleared
@@ -70,5 +45,31 @@ export function setupMessageHandler() {
         })
       );
     }
+
+     // Handle cache clear request (clears runtime caches but preserves precache for offline functionality)
+    //  else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
+    //   event.waitUntil(
+    //     caches.keys().then((cacheNamesList) => {
+    //       // IMPORTANT: Preserve the precache so the app works offline
+    //       // Only clear runtime caches, not the workbox-precache which contains the homepage
+    //       const precacheCacheName = cacheNames.precache;
+          
+    //       const cachesToDelete = cacheNamesList.filter(
+    //         (cacheName) => cacheName !== precacheCacheName
+    //       );
+          
+    //       return Promise.all(
+    //         cachesToDelete.map((cacheName) => caches.delete(cacheName))
+    //       );
+    //     }).then(() => {
+    //       // Notify the client that caches are cleared
+    //       self.clients.matchAll().then((clients) => {
+    //         clients.forEach((client) => {
+    //           client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+    //         });
+    //       });
+    //     })
+    //   );
+    // }
   });
 }
