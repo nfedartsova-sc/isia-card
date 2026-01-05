@@ -161,12 +161,33 @@ registerRoute(
   })
 );
 
+// Add this custom strategy class before the registerRoute calls
+class NetworkFirstWithOfflineCheck extends NetworkFirst {
+  async _handle(request: Request, handler: StrategyHandler): Promise<Response> {
+    // On iOS, navigator.onLine might not be reliable in service worker context
+    // So we try cache first if network seems unavailable
+    try {
+      // Try to get from cache first if we suspect we're offline
+      const cachedResponse = await handler.cacheMatch(request);
+      if (cachedResponse) {
+        // Still try network in background for fresh data
+        handler.fetch(request).catch(() => {});
+        return cachedResponse;
+      }
+    } catch (e) {
+      // Continue to network-first if cache check fails
+    }
+    // Fall back to standard NetworkFirst behavior
+    return super._handle(request, handler);
+  }
+}
+
 // API - Cache with NetworkFirst strategy (exclude image API endpoints)
 registerRoute(
   ({ url }) => 
     url.pathname.startsWith('/api/') &&
     !IMAGE_API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint)),
-  new NetworkFirst({
+  new NetworkFirstWithOfflineCheck({
     cacheName: runtimeCachesConfig.api.name,
     // Fall back to cache after given number of seconds if offline
     networkTimeoutSeconds: NETWORK_TIMEOUT_SECONDS,
@@ -183,7 +204,7 @@ registerRoute(
 
 // FONTS - Cache with CacheFirst strategy  
 registerRoute(
-  ({ request }) => request.destination === 'font',
+  ({ request }) => request.destination === DESTINATION_TYPE.FONT,
   new CacheFirst({
     cacheName: runtimeCachesConfig.static.name,
     plugins: [
@@ -213,7 +234,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
       const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
     
       // Method 1: Use Workbox's matchPrecache (handles __WB_REVISION__ automatically)
-      const precached = await matchPrecache(pathname);
+      const precached = await matchPrecache(normalizedPath);
       if (precached) {
         console.log('[SW] Found in precache via matchPrecache:', pathname);
         return precached;
