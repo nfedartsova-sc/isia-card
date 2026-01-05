@@ -132,8 +132,10 @@ export function setupMessageHandler() {
       );
     }*/
 
+
+      // VERY GOOD!!!
     // Handle cache clear request (clears runtime caches but preserves precache for offline functionality)
-    else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
+    /*else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
       event.waitUntil(
         (async () => {
           try {
@@ -221,6 +223,134 @@ export function setupMessageHandler() {
           }
         })()
     );
+    }*/
+
+
+    // Handle cache clear request (clears ALL caches - both runtime and precache)
+    else if (event.data.type === SW_RECEIVE_MESSAGES.CLEAR_ALL_CACHES) {
+      event.waitUntil(
+        (async () => {
+          try {
+            // Get all cache names
+            const cacheNamesList = await caches.keys();
+            console.log('[SW] Clearing all caches:', cacheNamesList);
+            
+            if (cacheNamesList.length === 0) {
+              console.log('[SW] No caches to clear');
+              // Still notify client
+              const clients = await self.clients.matchAll();
+              clients.forEach((client) => {
+                client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+              });
+              return;
+            }
+
+            // Helper function to delete a cache with retry logic
+            const deleteCacheWithRetry = async (
+              cacheName: string,
+              maxAttempts: number = 3,
+              retryDelayMs: number = 100
+            ): Promise<{ cacheName: string; success: boolean; error?: any }> => {
+              for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                  const deleted = await caches.delete(cacheName);
+                  if (deleted) {
+                    console.log(`[SW] Cache "${cacheName}" deleted successfully`);
+                    return { cacheName, success: true };
+                  }
+                  
+                  // Deletion returned false (cache didn't exist or couldn't be deleted)
+                  if (attempt < maxAttempts - 1) {
+                    console.warn(`[SW] Cache "${cacheName}" deletion failed (attempt ${attempt + 1}/${maxAttempts}), retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                  } else {
+                    console.error(`[SW] Cache "${cacheName}" deletion failed after ${maxAttempts} attempts`);
+                    return { cacheName, success: false, error: 'Deletion returned false' };
+                  }
+                } catch (error) {
+                  if (attempt < maxAttempts - 1) {
+                    console.warn(`[SW] Cache "${cacheName}" deletion error (attempt ${attempt + 1}/${maxAttempts}):`, error);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                  } else {
+                    console.error(`[SW] Cache "${cacheName}" deletion error after ${maxAttempts} attempts:`, error);
+                    return { cacheName, success: false, error };
+                  }
+                }
+              }
+              return { cacheName, success: false, error: 'Max attempts reached' };
+            };
+
+            // Delete all caches in parallel with retry logic
+            const deleteResults = await Promise.allSettled(
+              cacheNamesList.map(cacheName => deleteCacheWithRetry(cacheName))
+            );
+
+            // Process results
+            const results: Array<{ cacheName: string; success: boolean; error?: any }> = [];
+            const errors: Array<{ cacheName: string; error: any }> = [];
+
+            deleteResults.forEach((result, index) => {
+              if (result.status === 'fulfilled') {
+                results.push(result.value);
+                if (!result.value.success) {
+                  errors.push({ cacheName: result.value.cacheName, error: result.value.error });
+                }
+              } else {
+                const cacheName = cacheNamesList[index];
+                errors.push({ cacheName, error: result.reason });
+                results.push({ cacheName, success: false, error: result.reason });
+              }
+            });
+
+            const successfulDeletions = results.filter(r => r.success);
+            const failedDeletions = errors;
+
+            console.log(`[SW] Cache deletion summary: ${successfulDeletions.length} succeeded, ${failedDeletions.length} failed`);
+
+            if (failedDeletions.length > 0) {
+              console.error('[SW] Failed to delete caches:', failedDeletions);
+            }
+
+            // Verify all caches are actually deleted
+            const remainingCaches = await caches.keys();
+            if (remainingCaches.length > 0) {
+              console.warn('[SW] Some caches still exist after deletion:', remainingCaches);
+              
+              // Final retry for remaining caches
+              const finalRetryResults = await Promise.allSettled(
+                remainingCaches.map(cacheName => deleteCacheWithRetry(cacheName, 2, 200))
+              );
+
+              const finalRemainingCaches = await caches.keys();
+              if (finalRemainingCaches.length > 0) {
+                console.error('[SW] Caches still remaining after final retry:', finalRemainingCaches);
+              } else {
+                console.log('[SW] All caches successfully deleted after final retry');
+              }
+            } else {
+              console.log('[SW] All caches successfully deleted');
+            }
+
+            // Notify all clients that caches are cleared
+            const clients = await self.clients.matchAll();
+            clients.forEach((client) => {
+              client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+            });
+
+          } catch (error) {
+            console.error('[SW] Unexpected error while clearing caches:', error);
+            // Still notify client even if there was an error
+            try {
+              const clients = await self.clients.matchAll();
+              clients.forEach((client) => {
+                client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+              });
+            } catch (notificationError) {
+              console.error('[SW] Failed to notify clients:', notificationError);
+            }
+          }
+        })()
+      );
     }
 
     // TODO: delete if not necessary
