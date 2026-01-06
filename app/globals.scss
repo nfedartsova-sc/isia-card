@@ -62,6 +62,36 @@ body {
  color: $error; 
 }
 
+@mixin disabled-btn-styles {
+  cursor: default !important;
+  color: $disabled !important;
+  pointer-events: none !important;
+
+  // Rainbow background effect - must override white background
+  background: linear-gradient(
+    90deg,
+    #f4f6f7 0%,
+    #e8ecf0 33.33%,
+    #d4dae3 66.66%,
+    #f4f6f7 100%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: rainbow-slide 3s linear infinite !important;
+  
+  // Override any hover/active states
+  &:hover, &:focus, &:active {
+    background: linear-gradient(
+      90deg,
+      #f4f6f7 0%,
+      #e8ecf0 33.33%,
+      #d4dae3 66.66%,
+      #f4f6f7 100%
+    ) !important;
+    background-size: 200% 100% !important;
+    color: $disabled !important;
+  }
+}
+
 .btn {
   min-height: 43px;
   font-weight: 700;
@@ -105,39 +135,36 @@ body {
 
     &:disabled,
     &.disabled {
-      cursor: default;
-      color: $disabled;
-      opacity: 0.6;
-    }
-
-    &.half-disabled {
-      cursor: default;
-      color: $disabled;
-      opacity: 0.8;
-      pointer-events: none;
+      @include disabled-btn-styles;
     }
   }
 }
 
 // Add styles for pwa-install-dlg-button if it's not using .btn class
 .pwa-install-dlg-button {
-  &.disabled {
-    cursor: default;
-    // opacity: 0.6;
-    // pointer-events: none;
+  position: relative;
+  overflow: hidden; // Hidden to contain the animated background
 
-    background-color: $disabled;
-    color: $white;
-    pointer-events: none;
+  // When combined with btn btn-default, ensure disabled styles override
+  &.btn.btn-default {
+    &:disabled,
+    &.disabled {
+      @include disabled-btn-styles;
+    }
   }
 
-  &.half-disabled {
-    cursor: default;
-    // opacity: 0.8;
-    // pointer-events: none;
-    background: linear-gradient(to right, $disabled 0%, $disabled 50%, $primary-btn 50%, $primary-btn 100%);
-    color: $white;
-    pointer-events: none;
+  // Standalone disabled styles
+  &:disabled,
+  &.disabled {
+    @include disabled-btn-styles;
   }
 }
 
+@keyframes rainbow-slide {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}

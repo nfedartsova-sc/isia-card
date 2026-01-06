@@ -22,6 +22,49 @@ declare const self: ServiceWorkerGlobalScope;
 export function setupMessageHandler() {
   self.addEventListener('message', (event) => {
     if (!event.data) return;
+
+    console.log('[SW] Received message:', event.data.type);
+
+        // Helper function to send message to client(s)
+        const sendToClients = async (message: any) => {
+          // First, try to send directly to the source if available
+          if (event.source && 'postMessage' in event.source) {
+            try {
+              (event.source as Client).postMessage(message);
+              console.log('[SW] Message sent via event.source');
+              return;
+            } catch (error) {
+              console.warn('[SW] Failed to send via event.source:', error);
+            }
+          }
+    
+          // Fallback: try to get clients, with retry logic
+          let clients = await self.clients.matchAll({ includeUncontrolled: true });
+          console.log('[SW] Found', clients.length, 'clients on first attempt');
+          
+          // If no clients, wait a bit and try again
+          if (clients.length === 0) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            clients = await self.clients.matchAll({ includeUncontrolled: true });
+            console.log('[SW] Found', clients.length, 'clients on second attempt');
+          }
+          
+          // If still no clients, wait a bit more
+          if (clients.length === 0) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            clients = await self.clients.matchAll({ includeUncontrolled: true });
+            console.log('[SW] Found', clients.length, 'clients on third attempt');
+          }
+    
+          if (clients.length > 0) {
+            clients.forEach((client) => {
+              client.postMessage(message);
+            });
+            console.log('[SW] Message sent to', clients.length, 'clients');
+          } else {
+            console.warn('[SW] No clients available to send message to');
+          }
+        };
     
     if (event.data.type === SW_RECEIVE_MESSAGES.SKIP_WAITING) {
       // skipWaiting() forces a new service worker to activate immediately, bypassing the default waiting phase.
@@ -248,10 +291,12 @@ export function setupMessageHandler() {
             if (cacheNamesList.length === 0) {
               console.log('[SW] No caches to clear');
               // Still notify client
-              const clients = await self.clients.matchAll();
-              clients.forEach((client) => {
-                client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
-              });
+              // const clients = await self.clients.matchAll();
+              // clients.forEach((client) => {
+              //   client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+              // });
+              // return;
+              await sendToClients({ type: SW_POST_MESSAGES.CACHES_CLEARED });
               return;
             }
 
@@ -460,20 +505,24 @@ export function setupMessageHandler() {
 
 
 
-            // Notify all clients that caches are cleared
-            const clients = await self.clients.matchAll();
-            clients.forEach((client) => {
-              client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
-            });
+            // // Notify all clients that caches are cleared
+            // const clients = await self.clients.matchAll();
+            // clients.forEach((client) => {
+            //   client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+            // });
+
+            await sendToClients({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+
 
           } catch (error) {
             console.error('[SW] Unexpected error while clearing caches:', error);
             // Still notify client even if there was an error
             try {
-              const clients = await self.clients.matchAll();
-              clients.forEach((client) => {
-                client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
-              });
+              // const clients = await self.clients.matchAll();
+              // clients.forEach((client) => {
+              //   client.postMessage({ type: SW_POST_MESSAGES.CACHES_CLEARED });
+              // });
+              await sendToClients({ type: SW_POST_MESSAGES.CACHES_CLEARED });
             } catch (notificationError) {
               console.error('[SW] Failed to notify clients:', notificationError);
             }
@@ -484,8 +533,9 @@ export function setupMessageHandler() {
 
 // Handle cache status check request
 else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
+  console.log('[SW] Received PRECACHE_STATUS message');
   // Don't use waitUntil here - we want this to run independently
-  (async () => {
+  event.waitUntil((async () => {
     const CHECK_INTERVAL_MS = 10000; // 10 seconds
     const MAX_CHECK_DURATION_MS = 60000; // 1 minute
     const startTime = Date.now();
@@ -613,22 +663,32 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
         const remaining = status.totalCount - status.cachedCount;
         // If precache doesn't exist or is empty, indicate we're waiting for installation
         if (status.cachedCount === 0 && status.missingResources.length === status.totalCount) {
-          message = `Waiting for service worker to cache resources...`;
+          message = `Waiting for service worker to cache critical resources...`;
         } else {
-          message = `Caching resources... ${remaining} remaining`;
+          message = `Service worker caching critical resources... ${remaining} remaining`;
         }
       }
 
-      const clients = await self.clients.matchAll();
-      clients.forEach((client) => {
-        client.postMessage({
-          type: SW_POST_MESSAGES.PRECACHE_STATUS,
-          message,
-          allCached: status.allCached,
-          missingResources: status.missingResources,
-          cachedCount: status.cachedCount,
-          totalCount: status.totalCount,
-        });
+      // const clients = await self.clients.matchAll();
+      // console.log('[SW] Sending PRECACHE_STATUS to', clients.length, 'clients');
+      // clients.forEach((client) => {
+      //   client.postMessage({
+      //     type: SW_POST_MESSAGES.PRECACHE_STATUS,
+      //     message,
+      //     allCached: status.allCached,
+      //     missingResources: status.missingResources,
+      //     cachedCount: status.cachedCount,
+      //     totalCount: status.totalCount,
+      //   });
+      // });
+
+      await sendToClients({
+        type: SW_POST_MESSAGES.PRECACHE_STATUS,
+        message,
+        allCached: status.allCached,
+        missingResources: status.missingResources,
+        cachedCount: status.cachedCount,
+        totalCount: status.totalCount,
       });
 
       return status;
@@ -646,18 +706,28 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
         if (elapsed >= MAX_CHECK_DURATION_MS) {
           clearInterval(intervalId);
           const finalStatus = await checkPrecacheStatus();
-          const clients = await self.clients.matchAll();
-          clients.forEach((client) => {
-            client.postMessage({
-              type: SW_POST_MESSAGES.PRECACHE_STATUS,
-              message: finalStatus.allCached
-                ? `All critical resources cached`
-                : `Some resources may still be caching (${finalStatus.missingResources.length} remaining)`,
-              allCached: finalStatus.allCached,
-              missingResources: finalStatus.missingResources,
-              cachedCount: finalStatus.cachedCount,
-              totalCount: finalStatus.totalCount,
-            });
+          // const clients = await self.clients.matchAll();
+          // clients.forEach((client) => {
+          //   client.postMessage({
+          //     type: SW_POST_MESSAGES.PRECACHE_STATUS,
+          //     message: finalStatus.allCached
+          //       ? `All critical resources cached`
+          //       : `Some resources may still be caching (${finalStatus.missingResources.length} remaining)`,
+          //     allCached: finalStatus.allCached,
+          //     missingResources: finalStatus.missingResources,
+          //     cachedCount: finalStatus.cachedCount,
+          //     totalCount: finalStatus.totalCount,
+          //   });
+          // });
+          await sendToClients({
+            type: SW_POST_MESSAGES.PRECACHE_STATUS,
+            message: finalStatus.allCached
+              ? `All critical resources cached`
+              : `Some resources may still be caching (${finalStatus.missingResources.length} remaining)`,
+            allCached: finalStatus.allCached,
+            missingResources: finalStatus.missingResources,
+            cachedCount: finalStatus.cachedCount,
+            totalCount: finalStatus.totalCount,
           });
           return;
         }
@@ -671,14 +741,15 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
         }
       }, CHECK_INTERVAL_MS);
     }
-  })();
+  })());
 }
 
 
 // Handle API cache status check request
 else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
   // Don't use waitUntil here - we want this to run independently
-  (async () => {
+  console.log('[SW] Processing API_RUNTIME_CACHE_STATUS request');
+  event.waitUntil((async () => {
     const CHECK_INTERVAL_MS = 10000; // 10 seconds
     const MAX_CHECK_DURATION_MS = 60000; // 1 minute
     const startTime = Date.now();
@@ -782,18 +853,26 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
       } else if (status.allCached && !status.hasAllFields) {
         message = `Card data cached but missing fields: ${status.missingFields.join(', ')}`;
       } else {
-        message = `Waiting for card data to be cached...`;
+        message = `Waiting for service worker to cache card data...`;
       }
 
-      const clients = await self.clients.matchAll();
-      clients.forEach((client) => {
-        client.postMessage({
-          type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
-          message,
-          allCached: status.allCached,
-          hasAllFields: status.hasAllFields,
-          missingFields: status.missingFields,
-        });
+      // const clients = await self.clients.matchAll();
+      // clients.forEach((client) => {
+      //   client.postMessage({
+      //     type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+      //     message,
+      //     allCached: status.allCached,
+      //     hasAllFields: status.hasAllFields,
+      //     missingFields: status.missingFields,
+      //   });
+      // });
+
+      await sendToClients({
+        type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+        message,
+        allCached: status.allCached,
+        hasAllFields: status.hasAllFields,
+        missingFields: status.missingFields,
       });
 
       return status;
@@ -811,19 +890,30 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
         if (elapsed >= MAX_CHECK_DURATION_MS) {
           clearInterval(intervalId);
           const finalStatus = await checkApiCacheStatus();
-          const clients = await self.clients.matchAll();
-          clients.forEach((client) => {
-            client.postMessage({
-              type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
-              message: finalStatus.allCached && finalStatus.hasAllFields
-                ? `API data cached with all user fields`
-                : finalStatus.allCached
-                  ? `API data cached but missing fields: ${finalStatus.missingFields.join(', ')}`
-                  : `API data may still be caching`,
-              allCached: finalStatus.allCached,
-              hasAllFields: finalStatus.hasAllFields,
-              missingFields: finalStatus.missingFields,
-            });
+          // const clients = await self.clients.matchAll();
+          // clients.forEach((client) => {
+          //   client.postMessage({
+          //     type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+          //     message: finalStatus.allCached && finalStatus.hasAllFields
+          //       ? `Card data cached with all user fields`
+          //       : finalStatus.allCached
+          //         ? `Card data cached but missing fields: ${finalStatus.missingFields.join(', ')}`
+          //         : `Card data may still be caching`,
+          //     allCached: finalStatus.allCached,
+          //     hasAllFields: finalStatus.hasAllFields,
+          //     missingFields: finalStatus.missingFields,
+          //   });
+          // });
+          await sendToClients({
+            type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+            message: finalStatus.allCached && finalStatus.hasAllFields
+              ? `Card data cached with all user fields`
+              : finalStatus.allCached
+                ? `Card data cached but missing fields: ${finalStatus.missingFields.join(', ')}`
+                : `Card data may still be caching`,
+            allCached: finalStatus.allCached,
+            hasAllFields: finalStatus.hasAllFields,
+            missingFields: finalStatus.missingFields,
           });
           return;
         }
@@ -837,14 +927,15 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
         }
       }, CHECK_INTERVAL_MS);
     }
-  })();
+  })());
 }
 
 
 // Handle Images runtime cache status check request
 else if (event.data.type === SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
   // Don't use waitUntil here - we want this to run independently
-  (async () => {
+  console.log('[SW] Processing IMAGES_RUNTIME_CACHE_STATUS request');
+  event.waitUntil((async () => {
     const CHECK_INTERVAL_MS = 10000; // 10 seconds
     const MAX_CHECK_DURATION_MS = 60000; // 1 minute
     const startTime = Date.now();
@@ -996,20 +1087,29 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
         if (status.cachedCount === 0 && status.missingResources.length === status.totalCount) {
           message = `Waiting for service worker to cache card images...`;
         } else {
-          message = `Caching card images... ${remaining} remaining`;
+          message = `Service worker caching card images... ${remaining} remaining`;
         }
       }
 
-      const clients = await self.clients.matchAll();
-      clients.forEach((client) => {
-        client.postMessage({
-          type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
-          message,
-          allCached: status.allCached,
-          missingResources: status.missingResources,
-          cachedCount: status.cachedCount,
-          totalCount: status.totalCount,
-        });
+      // const clients = await self.clients.matchAll();
+      // clients.forEach((client) => {
+      //   client.postMessage({
+      //     type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
+      //     message,
+      //     allCached: status.allCached,
+      //     missingResources: status.missingResources,
+      //     cachedCount: status.cachedCount,
+      //     totalCount: status.totalCount,
+      //   });
+      // });
+
+      await sendToClients({
+        type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
+        message,
+        allCached: status.allCached,
+        missingResources: status.missingResources,
+        cachedCount: status.cachedCount,
+        totalCount: status.totalCount,
       });
 
       return status;
@@ -1027,18 +1127,28 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
         if (elapsed >= MAX_CHECK_DURATION_MS) {
           clearInterval(intervalId);
           const finalStatus = await checkImagesCacheStatus();
-          const clients = await self.clients.matchAll();
-          clients.forEach((client) => {
-            client.postMessage({
-              type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
-              message: finalStatus.allCached
-                ? `All images cached`
-                : `Some images may still be caching (${finalStatus.missingResources.length} remaining)`,
-              allCached: finalStatus.allCached,
-              missingResources: finalStatus.missingResources,
-              cachedCount: finalStatus.cachedCount,
-              totalCount: finalStatus.totalCount,
-            });
+          // const clients = await self.clients.matchAll();
+          // clients.forEach((client) => {
+          //   client.postMessage({
+          //     type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
+          //     message: finalStatus.allCached
+          //       ? `All images cached`
+          //       : `Some images may still be caching (${finalStatus.missingResources.length} remaining)`,
+          //     allCached: finalStatus.allCached,
+          //     missingResources: finalStatus.missingResources,
+          //     cachedCount: finalStatus.cachedCount,
+          //     totalCount: finalStatus.totalCount,
+          //   });
+          // });
+          await sendToClients({
+            type: SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
+            message: finalStatus.allCached
+              ? `All images cached`
+              : `Some images may still be caching (${finalStatus.missingResources.length} remaining)`,
+            allCached: finalStatus.allCached,
+            missingResources: finalStatus.missingResources,
+            cachedCount: finalStatus.cachedCount,
+            totalCount: finalStatus.totalCount,
           });
           return;
         }
@@ -1052,7 +1162,7 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
         }
       }, CHECK_INTERVAL_MS);
     }
-  })();
+  })());
 }
 
 
