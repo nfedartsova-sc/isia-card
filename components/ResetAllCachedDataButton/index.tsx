@@ -427,7 +427,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       />
       <button
         onClick={handleShowResetCachePrompt}
-        className={`pwa-install-dlg-button ${getButtonDisabledState() ? 'disabled' : ''} ${className}`}
+        className={`pwa-install-dlg-button ${className}`}
         style={style}
         aria-label="Reset all cached data"
         disabled={getButtonDisabledState()/* || resetProgress === 'clearing-caches' || resetProgress === 'clearing-indexeddb'*/}
