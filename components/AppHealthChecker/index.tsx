@@ -34,9 +34,10 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
 }) => {
   const [preCacheStatus, setPreCacheStatus] = useState<CacheStatus | null>(null);
   const [apiCacheStatus, setApiCacheStatus] = useState<ApiCacheStatus | null>(null);
+  const [imagesCacheStatus, setImagesCacheStatus] = useState<CacheStatus | null>(null);
   const [isCheckingPrecache, setIsCheckingPrecache] = useState(false);
   const [isCheckingApiCache, setIsCheckingApiCache] = useState(false);
-  
+  const [isCheckingImagesCache, setIsCheckingImagesCache] = useState(false);
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.PRECACHE_STATUS) {
@@ -61,6 +62,18 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       });
       setIsCheckingApiCache(!(allCached && hasAllFields));
     }
+
+    if (event.data && event.data.type === SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
+        const { message, allCached, missingResources, cachedCount, totalCount } = event.data;
+        setImagesCacheStatus({
+          message,
+          allCached,
+          missingResources,
+          cachedCount,
+          totalCount,
+        });
+        setIsCheckingImagesCache(!allCached);
+      }
   }, []);
 
   useEffect(() => {
@@ -73,11 +86,15 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
         if (navigator.serviceWorker.controller) {
           setIsCheckingPrecache(true);
           setIsCheckingApiCache(true);
+          setIsCheckingImagesCache(true);
           navigator.serviceWorker.controller.postMessage({ 
             type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS 
           });
           navigator.serviceWorker.controller.postMessage({ 
             type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS 
+          });
+          navigator.serviceWorker.controller.postMessage({ 
+            type: SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS 
           });
         }
       };
@@ -97,7 +114,7 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
 //     return null;
 //   }
 
-  if (!preCacheStatus && !apiCacheStatus)
+  if (!preCacheStatus && !apiCacheStatus && !imagesCacheStatus)
     return (
       <div className={`app-health-checker ${className}`} style={style}>
         No cache health status
@@ -171,6 +188,44 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
                     />
                     <div className="health-status-message">
                       {apiCacheStatus.message}
+                    </div>
+                  </>
+                )
+            }
+          </div>
+        )}
+
+        {/* Images cache status */}
+        {imagesCacheStatus && (
+          <div className="health-status-item">
+            {
+              isCheckingImagesCache
+                ? (
+                  <>
+                    <Loader />
+                    <div className="health-status-message">
+                      {imagesCacheStatus.message}
+                    </div>
+                  </>
+                )
+                : (
+                  <>
+                    <Checked
+                      checkStatus={
+                        !imagesCacheStatus.missingResources || !imagesCacheStatus.missingResources.length
+                          ? 'success'
+                          : imagesCacheStatus.totalCount && imagesCacheStatus.missingResources.length < imagesCacheStatus.totalCount
+                            ? 'warning'
+                            : 'error'
+                      }
+                    />
+                    <div className="health-status-message">
+                      {imagesCacheStatus.message}
+                      {imagesCacheStatus.cachedCount !== undefined && imagesCacheStatus.totalCount !== undefined && (
+                        <span className="health-status-progress">
+                          {' '}({imagesCacheStatus.cachedCount}/{imagesCacheStatus.totalCount})
+                        </span>
+                      )}
                     </div>
                   </>
                 )
