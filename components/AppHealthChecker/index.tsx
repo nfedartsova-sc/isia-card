@@ -21,12 +21,22 @@ interface CacheStatus {
   totalCount?: number;
 }
 
+interface ApiCacheStatus {
+  message: string;
+  allCached: boolean;
+  hasAllFields: boolean;
+  missingFields?: string[];
+}
+
 const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
   className = '',
   style = {},
 }) => {
   const [preCacheStatus, setPreCacheStatus] = useState<CacheStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
+  const [apiCacheStatus, setApiCacheStatus] = useState<ApiCacheStatus | null>(null);
+  const [isCheckingPrecache, setIsCheckingPrecache] = useState(false);
+  const [isCheckingApiCache, setIsCheckingApiCache] = useState(false);
+  
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.PRECACHE_STATUS) {
@@ -38,7 +48,18 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
         cachedCount,
         totalCount,
       });
-      setIsChecking(!allCached);
+      setIsCheckingPrecache(!allCached);
+    }
+
+    if (event.data && event.data.type === SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS) {
+      const { message, allCached, hasAllFields, missingFields } = event.data;
+      setApiCacheStatus({
+        message,
+        allCached,
+        hasAllFields,
+        missingFields,
+      });
+      setIsCheckingApiCache(!(allCached && hasAllFields));
     }
   }, []);
 
@@ -47,18 +68,22 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       // Listen for cache status updates from service worker
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
 
-      // Send initial PRECACHE_STATUS request on mount
-      const sendCacheStatusRequest = () => {
+      // Send initial cache status requests on mount
+      const sendCacheStatusRequests = () => {
         if (navigator.serviceWorker.controller) {
-          setIsChecking(true);
+          setIsCheckingPrecache(true);
+          setIsCheckingApiCache(true);
           navigator.serviceWorker.controller.postMessage({ 
             type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS 
+          });
+          navigator.serviceWorker.controller.postMessage({ 
+            type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS 
           });
         }
       };
 
       // Wait a bit for service worker to be ready
-      const timeoutId = setTimeout(sendCacheStatusRequest, 500);
+      const timeoutId = setTimeout(sendCacheStatusRequests, 500);
 
       return () => {
         clearTimeout(timeoutId);
@@ -72,7 +97,7 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
 //     return null;
 //   }
 
-  if (!preCacheStatus)
+  if (!preCacheStatus && !apiCacheStatus)
     return (
       <div className={`app-health-checker ${className}`} style={style}>
         No cache health status
@@ -84,40 +109,74 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       <div className="title"><b>Your app health status:</b></div>
 
       <div className={`app-health-checker ${className}`} style={style}>
-        <div className="health-status-item">
-          {
-            isChecking
-              ? (
-                <>
-                  <Loader />
-                  <div className="health-status-message">
-                    {preCacheStatus.message}
-                  </div>
-                </>
-              )
-              : (
-                <>
-                  <Checked
-                    checkStatus={
-                      !preCacheStatus.missingResources || !preCacheStatus.missingResources.length
-                        ? 'success'
-                        : preCacheStatus.totalCount && preCacheStatus.missingResources.length < preCacheStatus.totalCount
-                          ? 'warning'
-                          : 'error'
-                    }
-                  />
-                  <div className="health-status-message">
-                    {preCacheStatus.message}
-                    {preCacheStatus.cachedCount !== undefined && preCacheStatus.totalCount !== undefined && (
-                      <span className="health-status-progress">
-                        {' '}({preCacheStatus.cachedCount}/{preCacheStatus.totalCount})
-                      </span>
-                    )}
-                  </div>
-                </>
-              )
-          }
-        </div>
+        {preCacheStatus && (
+          <div className="health-status-item">
+            {
+              isCheckingPrecache
+                ? (
+                  <>
+                    <Loader />
+                    <div className="health-status-message">
+                      {preCacheStatus.message}
+                    </div>
+                  </>
+                )
+                : (
+                  <>
+                    <Checked
+                      checkStatus={
+                        !preCacheStatus.missingResources || !preCacheStatus.missingResources.length
+                          ? 'success'
+                          : preCacheStatus.totalCount && preCacheStatus.missingResources.length < preCacheStatus.totalCount
+                            ? 'warning'
+                            : 'error'
+                      }
+                    />
+                    <div className="health-status-message">
+                      {preCacheStatus.message}
+                      {preCacheStatus.cachedCount !== undefined && preCacheStatus.totalCount !== undefined && (
+                        <span className="health-status-progress">
+                          {' '}({preCacheStatus.cachedCount}/{preCacheStatus.totalCount})
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )
+            }
+          </div>
+        )}
+
+        {apiCacheStatus && (
+          <div className="health-status-item">
+            {
+              isCheckingApiCache
+                ? (
+                  <>
+                    <Loader />
+                    <div className="health-status-message">
+                      {apiCacheStatus.message}
+                    </div>
+                  </>
+                )
+                : (
+                  <>
+                    <Checked
+                      checkStatus={
+                        apiCacheStatus.allCached && apiCacheStatus.hasAllFields
+                          ? 'success'
+                          : apiCacheStatus.allCached && !apiCacheStatus.hasAllFields
+                            ? 'warning'
+                            : 'error'
+                      }
+                    />
+                    <div className="health-status-message">
+                      {apiCacheStatus.message}
+                    </div>
+                  </>
+                )
+            }
+          </div>
+        )}
       </div>
 
     </div>

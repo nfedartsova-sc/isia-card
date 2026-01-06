@@ -673,6 +673,173 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
   })();
 }
 
+
+// Handle API cache status check request
+else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
+  // Don't use waitUntil here - we want this to run independently
+  (async () => {
+    const CHECK_INTERVAL_MS = 10000; // 10 seconds
+    const MAX_CHECK_DURATION_MS = 60000; // 1 minute
+    const startTime = Date.now();
+
+    const API_ENDPOINT = '/api/isiaCardData';
+    const REQUIRED_FIELDS = [
+      'isiaCode',
+      'name',
+      'title',
+      'countryCode',
+      'association',
+      'membershipNo',
+      'webSite',
+      'expirationDate',
+    ];
+
+    const checkApiCacheStatus = async (): Promise<{
+      allCached: boolean;
+      hasAllFields: boolean;
+      missingFields: string[];
+      message: string;
+    }> => {
+      try {
+        // Get api-runtime cache name
+        const apiCacheName = runtimeCachesConfig.api.name;
+        
+        // Check if api-runtime cache exists
+        const cacheExists = await caches.has(apiCacheName);
+        if (!cacheExists) {
+          return {
+            allCached: false,
+            hasAllFields: false,
+            missingFields: REQUIRED_FIELDS,
+            message: 'API cache not found',
+          };
+        }
+
+        const apiCache = await caches.open(apiCacheName);
+        
+        // Try to find the cached response for /api/isiaCardData
+        const apiUrl = new URL(API_ENDPOINT, self.location.href).href;
+        const cachedResponse = await apiCache.match(apiUrl);
+        
+        if (!cachedResponse) {
+          return {
+            allCached: false,
+            hasAllFields: false,
+            missingFields: REQUIRED_FIELDS,
+            message: 'API endpoint not cached',
+          };
+        }
+
+        // Parse the cached response to check fields
+        try {
+          const responseData = await cachedResponse.json();
+          const missingFields: string[] = [];
+          
+          for (const field of REQUIRED_FIELDS) {
+            if (!(field in responseData) || responseData[field] === null || responseData[field] === undefined) {
+              missingFields.push(field);
+            }
+          }
+
+          const hasAllFields = missingFields.length === 0;
+          
+          return {
+            allCached: true,
+            hasAllFields,
+            missingFields,
+            message: hasAllFields
+              ? 'API data cached with all fields'
+              : `API data cached but missing fields: ${missingFields.join(', ')}`,
+          };
+        } catch (parseError) {
+          console.error('[SW] Error parsing cached API response:', parseError);
+          return {
+            allCached: true,
+            hasAllFields: false,
+            missingFields: REQUIRED_FIELDS,
+            message: 'API data cached but response is invalid',
+          };
+        }
+      } catch (error) {
+        console.error('[SW] Error checking API cache status:', error);
+        return {
+          allCached: false,
+          hasAllFields: false,
+          missingFields: REQUIRED_FIELDS,
+          message: 'Error checking API cache',
+        };
+      }
+    };
+
+    const sendStatusUpdate = async (checkNumber: number) => {
+      const status = await checkApiCacheStatus();
+      const elapsed = Date.now() - startTime;
+      
+      let message: string;
+      if (status.allCached && status.hasAllFields) {
+        message = `Card data cached successfully`;
+      } else if (status.allCached && !status.hasAllFields) {
+        message = `Card data cached but missing fields: ${status.missingFields.join(', ')}`;
+      } else {
+        message = `Waiting for card data to be cached...`;
+      }
+
+      const clients = await self.clients.matchAll();
+      clients.forEach((client) => {
+        client.postMessage({
+          type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+          message,
+          allCached: status.allCached,
+          hasAllFields: status.hasAllFields,
+          missingFields: status.missingFields,
+        });
+      });
+
+      return status;
+    };
+
+    // Initial check
+    const initialStatus = await sendStatusUpdate(0);
+
+    // If not all cached and within time limit, continue checking
+    if (!(initialStatus.allCached && initialStatus.hasAllFields)) {
+      let checkNumber = 1;
+      const intervalId = setInterval(async () => {
+        const elapsed = Date.now() - startTime;
+        
+        if (elapsed >= MAX_CHECK_DURATION_MS) {
+          clearInterval(intervalId);
+          const finalStatus = await checkApiCacheStatus();
+          const clients = await self.clients.matchAll();
+          clients.forEach((client) => {
+            client.postMessage({
+              type: SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS,
+              message: finalStatus.allCached && finalStatus.hasAllFields
+                ? `API data cached with all user fields`
+                : finalStatus.allCached
+                  ? `API data cached but missing fields: ${finalStatus.missingFields.join(', ')}`
+                  : `API data may still be caching`,
+              allCached: finalStatus.allCached,
+              hasAllFields: finalStatus.hasAllFields,
+              missingFields: finalStatus.missingFields,
+            });
+          });
+          return;
+        }
+
+        const status = await sendStatusUpdate(checkNumber);
+        checkNumber++;
+
+        // If all cached with all fields, stop checking
+        if (status.allCached && status.hasAllFields) {
+          clearInterval(intervalId);
+        }
+      }, CHECK_INTERVAL_MS);
+    }
+  })();
+}
+
+
     // TODO: delete if not necessary
 
      // Handle cache clear request (clears runtime caches but preserves precache for offline functionality)
