@@ -45,7 +45,8 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
       };
     }
-  }, [addMessage]);
+    return undefined;
+  }, [handleSWMessage]);
 
   const handleShowResetCachePrompt = useCallback(() => {
     setShowResetCachePrompt(true);
@@ -384,9 +385,6 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     setShowResetCachePrompt(false);
   }, []);
 
-  if (!online)
-    return null;
-
   // Determine button state based on reset progress
   // const getButtonClassName = () => {
   //   const baseClass = `pwa-install-dlg-button ${className}`;
@@ -400,9 +398,9 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   //   return baseClass;
   // };
 
-  const getButtonDisabledState = useCallback(() => {
+ const getButtonDisabledState = useCallback(() => {
     return isCheckingServer || clearingCache;
-  }, []);
+  }, [isCheckingServer, clearingCache]);
 
   const getButtonTitle = useCallback(() => {
     if (isCheckingServer)
@@ -410,7 +408,10 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     if (clearingCache)
       return 'Clearing cache...';
     return 'Reset all cached data';
-  }, []);
+  }, [isCheckingServer, clearingCache]);
+
+  if (!online)
+    return null;
 
   return (
     <div>
