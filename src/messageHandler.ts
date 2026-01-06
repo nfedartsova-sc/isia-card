@@ -783,7 +783,7 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
             allCached: false,
             hasAllFields: false,
             missingFields: REQUIRED_FIELDS,
-            message: 'API cache not found',
+            message: 'API cache not found - endpoint may not have been requested yet',
           };
         }
 
@@ -791,15 +791,38 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
         
         // Try to find the cached response for /api/isiaCardData
         const apiUrl = new URL(API_ENDPOINT, self.location.href).href;
-        const cachedResponse = await apiCache.match(apiUrl);
+        const apiPathname = new URL(API_ENDPOINT, self.location.href).pathname;
+        
+        // Try multiple matching strategies
+        const matchResults = [
+          await apiCache.match(apiUrl),
+          await apiCache.match(apiPathname),
+          await apiCache.match(API_ENDPOINT),
+          await apiCache.match(new Request(apiPathname)),
+          await apiCache.match(new Request(apiUrl)),
+          await apiCache.match(apiUrl, { ignoreSearch: true }),
+        ];
+
+        const cachedResponse = matchResults.find((response): response is Response => response !== undefined);
         
         if (!cachedResponse) {
-          return {
-            allCached: false,
-            hasAllFields: false,
-            missingFields: REQUIRED_FIELDS,
-            message: 'API endpoint not cached',
-          };
+          // Check if cache has any entries - if it does, the endpoint just isn't cached yet
+          const cacheKeys = await apiCache.keys();
+          if (cacheKeys.length > 0) {
+            return {
+              allCached: false,
+              hasAllFields: false,
+              missingFields: REQUIRED_FIELDS,
+              message: 'API endpoint not cached - may need to be requested first',
+            };
+          } else {
+            return {
+              allCached: false,
+              hasAllFields: false,
+              missingFields: REQUIRED_FIELDS,
+              message: 'API cache is empty - endpoint may not have been requested yet',
+            };
+          }
         }
 
         // Parse the cached response to check fields
@@ -853,7 +876,12 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS) {
       } else if (status.allCached && !status.hasAllFields) {
         message = `Card data cached but missing fields: ${status.missingFields.join(', ')}`;
       } else {
-        message = `Waiting for service worker to cache card data...`;
+        // After 30 seconds, change message to indicate it's not being cached
+        if (elapsed > 30000) {
+          message = `Card data not cached - endpoint may need to be requested first`;
+        } else {
+          message = `Waiting for service worker to cache card data...`;
+        }
       }
 
       // const clients = await self.clients.matchAll();
@@ -1085,7 +1113,12 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
         const remaining = status.totalCount - status.cachedCount;
         // If images cache doesn't exist or is empty, indicate we're waiting for installation
         if (status.cachedCount === 0 && status.missingResources.length === status.totalCount) {
-          message = `Waiting for service worker to cache card images...`;
+          // After 30 seconds, change message to indicate images may need to be requested first
+          if (elapsed > 30000) {
+            message = `Card images not cached - may need to be requested first`;
+          } else {
+            message = `Waiting for service worker to cache card images...`;
+          }
         } else {
           message = `Service worker caching card images... ${remaining} remaining`;
         }
