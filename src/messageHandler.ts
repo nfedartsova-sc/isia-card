@@ -378,20 +378,84 @@ export function setupMessageHandler() {
 
             // AFTER clearing caches, trigger service worker update to reinstall precache
             // This ensures the precache gets repopulated during the install event
-            try {
-              // Force service worker to update/reinstall
-              // This will trigger the install event which repopulates the precache
-              if (self.registration) {
-                await self.registration.update();
-                console.log('[SW] Triggered service worker update to repopulate precache');
-              } else {
-                console.warn('[SW] Service worker registration not available, cannot trigger update');
-              }
-            } catch (error) {
-              console.error('[SW] Error triggering service worker update:', error);
-              // Continue anyway - the page reload will trigger reinstall
-            }
 
+            //registration.update() doesn't trigger a reinstall if the service worker file hasn't changed, so the install event doesn't fire and precacheAndRoute() doesn't run
+
+
+            // try {
+            //   // Force service worker to update/reinstall
+            //   // This will trigger the install event which repopulates the precache
+            //   if (self.registration) {
+            //     await self.registration.update();
+            //     console.log('[SW] Triggered service worker update to repopulate precache');
+            //   } else {
+            //     console.warn('[SW] Service worker registration not available, cannot trigger update');
+            //   }
+            // } catch (error) {
+            //   console.error('[SW] Error triggering service worker update:', error);
+            //   // Continue anyway - the page reload will trigger reinstall
+            // }
+
+
+            // AFTER clearing caches, manually repopulate precache
+            // This is necessary because precacheAndRoute only runs during install event,
+            // and registration.update() won't trigger reinstall if file hasn't changed
+            try {
+              console.log('[SW] Manually repopulating precache...');
+              
+              const precacheResources = [
+                { url: HOMEPAGE_HTML_URL, revision: `main-${CACHE_VERSION}` },
+                { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
+                ...PRECACHED_IMAGES.map((imgData) => ({
+                  url: imgData.url,
+                  revision: null,
+                })),
+                ...PRECACHED_JS_FILES.map((jsData) => ({
+                  url: jsData.url,
+                  revision: jsData.revision || null,
+                })),
+              ];
+
+              // Open precache and manually cache each resource
+              const precacheCache = await caches.open(cacheNames.precache);
+              
+              const precacheResults = await Promise.allSettled(
+                precacheResources.map(async (resource) => {
+                  try {
+                    const response = await fetch(resource.url);
+                    if (response.ok) {
+                      // Get the cache key for this URL (with revision if applicable)
+                      let cacheKey: string;
+                      if (resource.revision) {
+                        const url = new URL(resource.url, self.location.href);
+                        url.searchParams.set('__WB_REVISION__', resource.revision);
+                        cacheKey = url.href;
+                      } else {
+                        cacheKey = new URL(resource.url, self.location.href).href;
+                      }
+                      
+                      await precacheCache.put(cacheKey, response.clone());
+                      console.log(`[SW] Precached ${resource.url}`);
+                      return { url: resource.url, success: true };
+                    } else {
+                      console.warn(`[SW] Failed to fetch ${resource.url}: ${response.status}`);
+                      return { url: resource.url, success: false };
+                    }
+                  } catch (error) {
+                    console.error(`[SW] Error precaching ${resource.url}:`, error);
+                    return { url: resource.url, success: false, error };
+                  }
+                })
+              );
+
+              const successfulPrecaches = precacheResults.filter(
+                r => r.status === 'fulfilled' && r.value.success
+              ).length;
+              console.log(`[SW] Repopulated ${successfulPrecaches}/${precacheResources.length} resources in precache`);
+            } catch (error) {
+              console.error('[SW] Error manually repopulating precache:', error);
+              // Continue anyway - this is best effort
+            }
 
 
 
