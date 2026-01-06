@@ -1,7 +1,7 @@
 @use "tailwindcss";
 
 // Import error color from globals
-@import '../../app/globals.scss';
+@use '../../app/globals.scss' as *;
 
 /* From Uiverse.io by Praashoo7 */ 
 /* Hide the default checkbox */

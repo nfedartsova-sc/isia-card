@@ -376,6 +376,21 @@ export function setupMessageHandler() {
             }
 
 
+            // AFTER clearing caches, trigger service worker update to reinstall precache
+            // This ensures the precache gets repopulated during the install event
+            try {
+              // Force service worker to update/reinstall
+              // This will trigger the install event which repopulates the precache
+              if (self.registration) {
+                await self.registration.update();
+                console.log('[SW] Triggered service worker update to repopulate precache');
+              } else {
+                console.warn('[SW] Service worker registration not available, cannot trigger update');
+              }
+            } catch (error) {
+              console.error('[SW] Error triggering service worker update:', error);
+              // Continue anyway - the page reload will trigger reinstall
+            }
 
 
 
@@ -428,8 +443,31 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
       let cachedCount = 0;
 
       try {
+        // Check if precache cache exists, if not, wait a bit for install to complete
+        const cacheExists = await caches.has(cacheNames.precache);
+        if (!cacheExists) {
+          // Precache doesn't exist yet - service worker might still be installing
+          // Return all resources as missing but indicate we're waiting
+          return {
+            allCached: false,
+            missingResources: criticalResources,
+            cachedCount: 0,
+            totalCount: criticalResources.length,
+          };
+        }
+
         const precacheCache = await caches.open(cacheNames.precache);
         const precacheKeys = await precacheCache.keys();
+
+         // If precache exists but is empty, service worker might still be installing
+         if (precacheKeys.length === 0) {
+          return {
+            allCached: false,
+            missingResources: criticalResources,
+            cachedCount: 0,
+            totalCount: criticalResources.length,
+          };
+        }
 
         for (const resource of criticalResources) {
           let isCached = false;
@@ -508,7 +546,12 @@ else if (event.data.type === SW_RECEIVE_MESSAGES.PRECACHE_STATUS) {
         message = `All critical resources cached successfully`;
       } else {
         const remaining = status.totalCount - status.cachedCount;
-        message = `Caching resources... ${remaining} remaining`;
+        // If precache doesn't exist or is empty, indicate we're waiting for installation
+        if (status.cachedCount === 0 && status.missingResources.length === status.totalCount) {
+          message = `Waiting for service worker to cache resources...`;
+        } else {
+          message = `Caching resources... ${remaining} remaining`;
+        }
       }
 
       const clients = await self.clients.matchAll();
