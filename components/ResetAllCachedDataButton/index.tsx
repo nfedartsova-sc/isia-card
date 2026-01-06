@@ -8,8 +8,8 @@ import { STORAGE_KEY } from '@/hooks/usePWAInstall.hook';
 import { ISIA_CARD_DATA_ENDPOINT } from '@/hooks/useISIACardData.hook';
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import { useMessages } from '@/contexts/MessageContext';
-// import { HOMEPAGE_HTML_URL, PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';
-// import { runtimeCachesConfig } from '@/src/runtimeCachesConfig';
+import { HOMEPAGE_HTML_URL, PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';
+import { runtimeCachesConfig } from '@/src/runtimeCachesConfig';
 
 interface ResetAllCachedDataButtonProps {
   className?: string;
@@ -322,7 +322,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
 
         // Preload critical resources before reloading.
         // This ensures they're cached in runtime cache.
-        /*try {
+        try {
           const criticalResources = [
             HOMEPAGE_HTML_URL,
             ...PRECACHED_IMAGES.map(imgData => imgData.url),
@@ -367,7 +367,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         } catch (error) {
           // Continue anyway - preloading is best effort
           console.warn('Error preloading resources:', error);
-        }*/
+        }
         
         // Delay reload so user can see a message and resources can cache
         setTimeout(() => {
