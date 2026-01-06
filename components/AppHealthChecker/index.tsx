@@ -210,7 +210,7 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
           console.log('[AppHealthChecker] Installing:', registration.installing);
           
           // Try to send via registration
-          if (sendViaRegistration(registration)) {
+          if (await sendViaRegistration(registration)) {
             return; // Successfully sent requests
           }
           
@@ -224,7 +224,7 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
           }
           
           // Try registration again
-          if (sendViaRegistration(registration)) {
+          if (await sendViaRegistration(registration)) {
             return;
           }
           
@@ -248,7 +248,7 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
             await controllerChangePromise;
             
             // Try again after controller change
-            if (sendCacheStatusRequests() || sendViaRegistration(registration)) {
+            if (await sendCacheStatusRequests() || await sendViaRegistration(registration)) {
               return;
             }
           }
