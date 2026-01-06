@@ -30,6 +30,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   const [isCheckingServer, setIsCheckingServer] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
   // const [resetProgress, setResetProgress] = useState<ResetProgress>('idle');
+  //const [buttonTitle, setButtonTitle] = useState('Reset all cached data');
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.CACHES_CLEARED)
@@ -399,6 +400,18 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   //   return baseClass;
   // };
 
+  const getButtonDisabledState = useCallback(() => {
+    return isCheckingServer || clearingCache;
+  }, []);
+
+  const getButtonTitle = useCallback(() => {
+    if (isCheckingServer)
+      return 'Checking server availability...';
+    if (clearingCache)
+      return 'Clearing cache...';
+    return 'Reset all cached data';
+  }, []);
+
   return (
     <div>
       <Prompt
@@ -416,9 +429,9 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         className={`pwa-install-dlg-button ${className}`}
         style={style}
         aria-label="Reset all cached data"
-        disabled={clearingCache/* || resetProgress === 'clearing-caches' || resetProgress === 'clearing-indexeddb'*/}
+        disabled={getButtonDisabledState()/* || resetProgress === 'clearing-caches' || resetProgress === 'clearing-indexeddb'*/}
       >
-        {children || 'Reset all cached data'}
+        {children || getButtonTitle()}
       </button>
     </div>
   );
