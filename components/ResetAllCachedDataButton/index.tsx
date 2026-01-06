@@ -59,7 +59,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(ISIA_CARD_DATA_ENDPOINT, {
-        method: 'HEAD', // Use HEAD to minimize data transfer
+        method: 'HEAD',
         signal: controller.signal,
         cache: 'no-store', // Don't use cache for this check
       });
@@ -321,7 +321,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         // Service worker already repopulates precache and runtime caches after clearing
         // No need to preload here - the reload will trigger service worker to serve cached resources
 
-        
+
         // Preload critical resources before reloading.
         // This ensures they're cached in runtime cache.
         /*try {

@@ -1,5 +1,5 @@
 // Version for cache management
-export const CACHE_VERSION = 'v1.0.136';
+export const CACHE_VERSION = 'v1.0.140';
 
 export const HOMEPAGE_HTML_URL = '/';
 export const FALLBACK_HTML_URL = '/offline';
