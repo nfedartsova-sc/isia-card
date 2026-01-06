@@ -1,0 +1,155 @@
+@use "tailwindcss";
+
+// Import error color from globals
+@import '../../app/globals.scss';
+
+/* From Uiverse.io by Praashoo7 */ 
+/* Hide the default checkbox */
+.container input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.container {
+  display: block;
+  position: relative;
+  cursor: pointer;
+  font-size: 20px;
+  user-select: none;
+}
+
+/* Base checkmark styles (shared by all variants) */
+%checkmark-base {
+  position: relative;
+  top: 0;
+  left: 0;
+  height: 2em;
+  width: 2em;
+  background-color: #ccc;
+  border-radius: 50%;
+  transition: .4s;
+  
+  &:after {
+    content: "";
+    position: absolute;
+    display: none;
+    left: 0.86em;
+    top: 0.56em;
+    width: 0.4em;
+    height: 0.7em;
+    border: solid white;
+    border-width: 0 0.15em 0.15em 0;
+    transform: rotate(45deg);
+  }
+}
+
+/* Success variant (existing limegreen color) */
+.checkmark-success {
+  @extend %checkmark-base;
+}
+
+.container input:checked ~ .checkmark-success {
+  box-shadow: none;
+  transform: rotateX(360deg);
+  background-color: $success;
+  
+  &:after {
+    display: block;
+  }
+}
+
+/* Error variant (using $error color) */
+.checkmark-error {
+  @extend %checkmark-base;
+}
+
+.container input:checked ~ .checkmark-error {
+  box-shadow: none;
+  transform: rotateX(360deg);
+  background-color: $error; // rgb(234 88 12)
+  
+  &:after {
+    display: block;
+  }
+}
+
+/* Warning variant (yellow color) */
+.checkmark-warning {
+  @extend %checkmark-base;
+}
+
+.container input:checked ~ .checkmark-warning {
+  box-shadow: none;
+  transform: rotateX(360deg);
+  background-color: $warning;
+  
+  &:after {
+    display: block;
+  }
+}
+
+
+
+// /* From Uiverse.io by Praashoo7 */ 
+// /* Hide the default checkbox */
+// .container input {
+//   position: absolute;
+//   opacity: 0;
+//   cursor: pointer;
+//   height: 0;
+//   width: 0;
+// }
+
+// .container {
+//   display: block;
+//   position: relative;
+//   cursor: pointer;
+//   font-size: 20px;
+//   user-select: none;
+// }
+
+// /* Create a custom checkbox */
+// .checkmark {
+//   position: relative;
+//   top: 0;
+//   left: 0;
+//   height: 2em;
+//   width: 2em;
+//   background-color: #ccc;
+//   border-radius: 50%;
+//   transition: .4s;
+// }
+
+// .container input:checked ~ .checkmark {
+//   box-shadow: none;
+//   transform: rotateX(360deg);
+
+//   background-color: limegreen;
+// }
+
+// /* Create the checkmark/indicator (hidden when not checked) */
+// .checkmark:after {
+//   content: "";
+//   position: absolute;
+//   display: none;
+// }
+
+// /* Show the checkmark when checked */
+// .container input:checked ~ .checkmark:after {
+//   display: block;
+// }
+
+// /* Style the checkmark/indicator */
+// .container .checkmark:after {
+//   left: 0.86em;
+//   top: 0.56em;
+//   width: 0.4em;
+//   height: 0.7em;
+//   border: solid white;
+//   border-width: 0 0.15em 0.15em 0;
+// //   box-shadow: 0.1em 0.1em 0em 0 rgba(0,0,0,0.3);
+//   transform: rotate(45deg);
+// }

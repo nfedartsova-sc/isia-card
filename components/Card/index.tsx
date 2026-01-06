@@ -14,6 +14,7 @@ import NavigatorOnlineStatus from '@/components/NavigatorOnlineStatus/index';
 import ResetAllCachedDataButton from '@/components/ResetAllCachedDataButton/index';
 import MessagesDisplay from '@/components/MessagesDisplay/index';
 import { useMessages } from '@/contexts/MessageContext';
+import AppHealthChecker from '@/components/AppHealthChecker/index';
 
 import './styles.scss';
 
@@ -228,7 +229,7 @@ export default function ISIACard() {
           >
             <img src="/images/logo.svg" alt="Go to main page" />
           </Link>
-          <span>Your card (good?)</span>
+          <span>Your card</span>
         </div>
         {(!showLoading && isTouchDevice !== undefined) &&
           <div>
@@ -267,15 +268,16 @@ export default function ISIACard() {
             <CardOwnerNationalSign imageURL={nationalSignURL} />
           </div>
         </div>
-        <div className="app-buttons-block">
-          {isClient && (
-            <>
-              <PWAInstallButton className="btn" />
-              <ResetAllCachedDataButton className='btn btn-default' />
-              <NavigatorOnlineStatus />
-            </>
-          )}
-        </div>
+        {isClient && (
+          <div className="app-buttons-block">
+            <PWAInstallButton className="btn" />
+            <ResetAllCachedDataButton className='btn btn-default' />
+            <NavigatorOnlineStatus />
+          </div>
+        )}
+        {isClient && (
+          <AppHealthChecker />
+        )}
         <div className="messages-block">
           <MessagesDisplay displayDebugMessages={process.env.NODE_ENV === 'development'} />
         </div>

@@ -36,16 +36,16 @@ const NotificationToast = ({
 };
 
 // Debug message list item
-const DebugMessageItem = ({ message }: { message: MessageWithId }) => {
-  const timestamp = new Date(message.timestamp).toLocaleTimeString();
-  return (
-    <li className={`debug-message debug-${message.type}`}>
-      <span className="debug-timestamp">[{timestamp}]</span>
-      <span className="debug-type">[{message.type.toUpperCase()}]</span>
-      <span className="debug-text">{message.text}</span>
-    </li>
-  );
-};
+// const DebugMessageItem = ({ message }: { message: MessageWithId }) => {
+//   const timestamp = new Date(message.timestamp).toLocaleTimeString();
+//   return (
+//     <li className={`debug-message debug-${message.type}`}>
+//       <span className="debug-timestamp">[{timestamp}]</span>
+//       <span className="debug-type">[{message.type.toUpperCase()}]</span>
+//       <span className="debug-text">{message.text}</span>
+//     </li>
+//   );
+// };
 
 type MessagesDisplayProps = {
   displayDebugMessages: boolean;
@@ -57,7 +57,7 @@ const MessagesDisplay: React.FC<MessagesDisplayProps> = (
   const { messages, dismissMessage } = useMessages();
   
   const appMessages = messages.filter(m => m.level === 'app');
-  const debugMessages = messages.filter(m => m.level === 'debug');
+  // const debugMessages = messages.filter(m => m.level === 'debug');
 
   return (
     <>
@@ -73,7 +73,7 @@ const MessagesDisplay: React.FC<MessagesDisplayProps> = (
         </div>
       )}
 
-      {displayDebugMessages && debugMessages.length > 0 && (
+      {/* {displayDebugMessages && debugMessages.length > 0 && (
         <div className="debug-messages-container">
           <div className="debug-header">Debug Messages</div>
           <ul className="debug-messages-list">
@@ -82,7 +82,7 @@ const MessagesDisplay: React.FC<MessagesDisplayProps> = (
             ))}
           </ul>
         </div>
-      )}
+      )} */}
     </>
   );
 };

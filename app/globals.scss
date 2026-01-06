@@ -10,6 +10,8 @@ $primary-btn: #132356;
 $primary-btn-hover: $primary;
 $disabled: #9ca3af;
 $error: rgb(234 88 12); // orange-600 in tailwind
+$warning: #fbbf24;
+$success: limegreen;
 
 // Font
 $font-family-sans-serif: "Open Sans", sans-serif;
@@ -121,13 +123,20 @@ body {
 .pwa-install-dlg-button {
   &.disabled {
     cursor: default;
-    opacity: 0.6;
+    // opacity: 0.6;
+    // pointer-events: none;
+
+    background-color: $disabled;
+    color: $white;
     pointer-events: none;
   }
 
   &.half-disabled {
     cursor: default;
-    opacity: 0.8;
+    // opacity: 0.8;
+    // pointer-events: none;
+    background: linear-gradient(to right, $disabled 0%, $disabled 50%, $primary-btn 50%, $primary-btn 100%);
+    color: $white;
     pointer-events: none;
   }
 }

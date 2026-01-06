@@ -8,7 +8,7 @@ import { STORAGE_KEY } from '@/hooks/usePWAInstall.hook';
 import { ISIA_CARD_DATA_ENDPOINT } from '@/hooks/useISIACardData.hook';
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import { useMessages } from '@/contexts/MessageContext';
-import { PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';
+import { HOMEPAGE_HTML_URL, PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';
 import { runtimeCachesConfig } from '@/src/runtimeCachesConfig';
 
 interface ResetAllCachedDataButtonProps {
@@ -17,7 +17,8 @@ interface ResetAllCachedDataButtonProps {
   children?: React.ReactNode;
 }
 
-type ResetProgress = 'idle' | 'clearing-caches' | 'clearing-indexeddb' | 'complete';
+type ResetProgress = 'idle' | 'clearing-caches' | 'cleared-caches' | 'clearing-indexeddb' | 'cleared-indexeddb' | 'complete';
+type PreloadAppResourcesProgress = 'idle' | 'preloading' | 'checking' | 'complete';
 
 const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   className = '',
@@ -30,6 +31,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   const [isCheckingServer, setIsCheckingServer] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
   const [resetProgress, setResetProgress] = useState<ResetProgress>('idle');
+  const [preloadAppResourcesProgress, setPreloadAppResourcesProgress] = useState<PreloadAppResourcesProgress>('idle');
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.CACHES_CLEARED)
@@ -242,7 +244,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     setShowResetCachePrompt(false);
 
     setClearingCache(true);
-    setResetProgress('clearing-caches'); // Start: fully disabled
+    setResetProgress('clearing-caches');
 
     let reloadApp = true;
 
@@ -275,6 +277,8 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: 'Cache Storage was not cleared', level: 'debug' } });
       }
 
+      setResetProgress('cleared-caches');
+
       // Update progress: cache storage cleared, now half-disabled
       setResetProgress('clearing-indexeddb');
 
@@ -286,6 +290,8 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: `IndexedDB clearing error: ${indexedDBError}`, level: 'debug' } });
         // Continue anyway - IndexedDB errors shouldn't block the reset
       }
+
+      setResetProgress('clearing-indexeddb');
 
       // Update progress: IndexedDB cleared, now fully enabled
       setResetProgress('complete');
@@ -316,7 +322,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         // This ensures they're cached in runtime cache.
         try {
           const criticalResources = [
-            '/',
+            HOMEPAGE_HTML_URL,
             ...PRECACHED_IMAGES.map(imgData => imgData.url),
             ...PRECACHED_JS_FILES.map(jsData => jsData.url),
             ISIA_CARD_DATA_ENDPOINT, // Preload card data API endpoint
@@ -332,7 +338,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
             )
           );
 
-          // CRITICAL FIX: Explicitly cache homepage in runtime pages cache
+          // Explicitly cache homepage in runtime pages cache
           // This ensures it's available offline even if precache matching fails
           try {
             const homepageResponse = await fetch('/', { 

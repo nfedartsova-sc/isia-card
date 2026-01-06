@@ -1,0 +1,31 @@
+@use "tailwindcss";
+
+.health-check-container {
+  @apply w-full;
+
+  .title {
+    
+  }
+  
+  .app-health-checker {
+    @apply w-full;
+    @apply py-2;
+    @apply px-4;
+    
+    .health-status-item {
+      @apply flex flex-row justify-start items-center;
+
+      .health-status-message {
+        @apply text-sm;
+        @apply text-gray-700;
+        @apply font-medium;
+        @apply ml-4;
+        
+        .health-status-progress {
+          @apply text-gray-500;
+          @apply font-normal;
+        }
+      }
+    }
+  }
+}
