@@ -318,9 +318,13 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
       // This ensures the app gets a fresh start.
       // Delay reload so user can see a message.
       if (reloadApp) {
+        // Service worker already repopulates precache and runtime caches after clearing
+        // No need to preload here - the reload will trigger service worker to serve cached resources
+
+        
         // Preload critical resources before reloading.
         // This ensures they're cached in runtime cache.
-        try {
+        /*try {
           const criticalResources = [
             HOMEPAGE_HTML_URL,
             ...PRECACHED_IMAGES.map(imgData => imgData.url),
@@ -365,7 +369,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         } catch (error) {
           // Continue anyway - preloading is best effort
           console.warn('Error preloading resources:', error);
-        }
+        }*/
         
         // Delay reload so user can see a message and resources can cache
         setTimeout(() => {
