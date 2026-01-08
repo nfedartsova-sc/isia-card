@@ -1,5 +1,5 @@
 // Version for cache management
-export const CACHE_VERSION = 'v1.0.219';
+export const CACHE_VERSION = 'v1.0.224';
 
 export const WB_REVISION_PARAM = '__WB_REVISION__';
 export const HOMEPAGE_HTML_URL = '/';

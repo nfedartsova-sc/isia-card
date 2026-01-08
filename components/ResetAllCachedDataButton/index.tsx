@@ -17,8 +17,6 @@ interface ResetAllCachedDataButtonProps {
   children?: React.ReactNode;
 }
 
-// type ResetProgress = 'idle' | 'clearing-caches' | 'cleared-caches' | 'clearing-indexeddb' | 'cleared-indexeddb' | 'complete';
-
 const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   className = '',
   style = {},
@@ -29,8 +27,6 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
   const [showResetCachePrompt, setShowResetCachePrompt] = useState(false);
   const [isCheckingServer, setIsCheckingServer] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
-  // const [resetProgress, setResetProgress] = useState<ResetProgress>('idle');
-  //const [buttonTitle, setButtonTitle] = useState('Reset all cached data');
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
     if (event.data && event.data.type === SW_POST_MESSAGES.CACHES_CLEARED)
@@ -76,6 +72,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     }
   }, [addMessage]);
 
+  
   const clearCacheStorage = useCallback(async () => {
     let cachesCleared = false;
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
@@ -119,125 +116,98 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
     return cachesCleared;
   }, [addMessage]);
 
-  /*const clearIndexedDBDatabases = useCallback(async () => {
-    if (indexedDB.databases) {
-      const databases = (await indexedDB.databases()); 
-      await Promise.all(
-        databases
-          .filter((db): db is IDBDatabaseInfo & { name: string } => !!db.name)
-          .map((db) => {
-            return new Promise((resolve, reject) => {
-              const request = indexedDB.deleteDatabase(db.name);
-              request.onsuccess = () => {
-                addMessage({ message: { type: 'success', text: `Database ${db.name} deleted`, level: 'debug' } });
-                resolve(true); 
-              };
-              request.onerror = () => {
-                addMessage({ message: { type: 'error', text: `Database ${db.name} error: ${JSON.stringify(request.error)}`, level: 'debug' } });
-                reject(request.error); 
-              };
-              request.onblocked = () => {
-                addMessage({ message: { type: 'info', text: `Database ${db.name} deletion blocked`, level: 'debug' } });
-                resolve(true);
-              };
-            });
-          })
-      );
-    }
-  }, [addMessage]);*/
+  // const clearIndexedDBDatabases = useCallback(async () => {
+  //   if (!indexedDB.databases) {
+  //     return;
+  //   }
 
-  const clearIndexedDBDatabases = useCallback(async () => {
-    if (!indexedDB.databases) {
-      return;
-    }
+  //   const databases = await indexedDB.databases();
+  //   const databasesToDelete = databases.filter(
+  //     (db): db is IDBDatabaseInfo & { name: string } => !!db.name
+  //   );
 
-    const databases = await indexedDB.databases();
-    const databasesToDelete = databases.filter(
-      (db): db is IDBDatabaseInfo & { name: string } => !!db.name
-    );
+  //   if (databasesToDelete.length === 0) {
+  //     addMessage({ message: { type: 'info', text: 'No IndexedDB databases to clear', level: 'debug' } });
+  //     return;
+  //   }
 
-    if (databasesToDelete.length === 0) {
-      addMessage({ message: { type: 'info', text: 'No IndexedDB databases to clear', level: 'debug' } });
-      return;
-    }
+  //   addMessage({ message: { type: 'info', text: `Clearing ${databasesToDelete.length} IndexedDB database(s)...`, level: 'debug' } });
 
-    addMessage({ message: { type: 'info', text: `Clearing ${databasesToDelete.length} IndexedDB database(s)...`, level: 'debug' } });
+  //   // Delete databases in parallel, but wait for each to actually complete
+  //   await Promise.all(
+  //     databasesToDelete.map((db) => {
+  //       return new Promise<void>((resolve, reject) => {
+  //         const MAX_WAIT_MS = 30000; // 30 seconds max per database
+  //         const startTime = Date.now();
+  //         let isResolved = false;
 
-    // Delete databases in parallel, but wait for each to actually complete
-    await Promise.all(
-      databasesToDelete.map((db) => {
-        return new Promise<void>((resolve, reject) => {
-          const MAX_WAIT_MS = 30000; // 30 seconds max per database
-          const startTime = Date.now();
-          let isResolved = false;
+  //         const timeoutId = setTimeout(() => {
+  //           if (!isResolved) {
+  //             isResolved = true;
+  //             addMessage({ 
+  //               message: { 
+  //                 type: 'info', 
+  //                 text: `Database ${db.name} deletion timed out after ${MAX_WAIT_MS}ms. It may still be deleting in the background.`, 
+  //                 level: 'debug' 
+  //               } 
+  //             });
+  //             resolve(); // Resolve to not block the reset process
+  //           }
+  //         }, MAX_WAIT_MS);
 
-          const timeoutId = setTimeout(() => {
-            if (!isResolved) {
-              isResolved = true;
-              addMessage({ 
-                message: { 
-                  type: 'info', 
-                  text: `Database ${db.name} deletion timed out after ${MAX_WAIT_MS}ms. It may still be deleting in the background.`, 
-                  level: 'debug' 
-                } 
-              });
-              resolve(); // Resolve to not block the reset process
-            }
-          }, MAX_WAIT_MS);
+  //         const request = indexedDB.deleteDatabase(db.name);
 
-          const request = indexedDB.deleteDatabase(db.name);
+  //         request.onsuccess = () => {
+  //           if (!isResolved) {
+  //             isResolved = true;
+  //             clearTimeout(timeoutId);
+  //             const elapsed = Date.now() - startTime;
+  //             addMessage({ 
+  //               message: { 
+  //                 type: 'success', 
+  //                 text: `Database ${db.name} deleted${elapsed > 1000 ? ` (took ${(elapsed / 1000).toFixed(1)}s)` : ''}`, 
+  //                 level: 'debug' 
+  //               } 
+  //             });
+  //             resolve();
+  //           }
+  //         };
 
-          request.onsuccess = () => {
-            if (!isResolved) {
-              isResolved = true;
-              clearTimeout(timeoutId);
-              const elapsed = Date.now() - startTime;
-              addMessage({ 
-                message: { 
-                  type: 'success', 
-                  text: `Database ${db.name} deleted${elapsed > 1000 ? ` (took ${(elapsed / 1000).toFixed(1)}s)` : ''}`, 
-                  level: 'debug' 
-                } 
-              });
-              resolve();
-            }
-          };
+  //         request.onerror = () => {
+  //           if (!isResolved) {
+  //             isResolved = true;
+  //             clearTimeout(timeoutId);
+  //             addMessage({ 
+  //               message: { 
+  //                 type: 'error', 
+  //                 text: `Database ${db.name} deletion error: ${request.error?.message || 'Unknown error'}`, 
+  //                 level: 'debug' 
+  //               } 
+  //             });
+  //             reject(request.error || new Error(`Failed to delete database ${db.name}`));
+  //           }
+  //         };
 
-          request.onerror = () => {
-            if (!isResolved) {
-              isResolved = true;
-              clearTimeout(timeoutId);
-              addMessage({ 
-                message: { 
-                  type: 'error', 
-                  text: `Database ${db.name} deletion error: ${request.error?.message || 'Unknown error'}`, 
-                  level: 'debug' 
-                } 
-              });
-              reject(request.error || new Error(`Failed to delete database ${db.name}`));
-            }
-          };
-
-          request.onblocked = () => {
-            // Don't resolve here - the deletion is still in progress
-            // It's waiting for open connections to close
-            const elapsed = Date.now() - startTime;
-            if (elapsed < 1000) {
-              // Only log on first block to avoid spam
-              addMessage({ 
-                message: { 
-                  type: 'info', 
-                  text: `Database ${db.name} deletion blocked - waiting for connections to close...`, 
-                  level: 'debug' 
-                } 
-              });
-            }
-            // Continue waiting for onsuccess or onerror
-          };
-        });
-      })
-    );
-  }, [addMessage]);
+  //         request.onblocked = () => {
+  //           // Don't resolve here - the deletion is still in progress
+  //           // It's waiting for open connections to close
+  //           const elapsed = Date.now() - startTime;
+  //           if (elapsed < 1000) {
+  //             // Only log on first block to avoid spam
+  //             addMessage({ 
+  //               message: { 
+  //                 type: 'info', 
+  //                 text: `Database ${db.name} deletion blocked - waiting for connections to close...`, 
+  //                 level: 'debug' 
+  //               } 
+  //             });
+  //           }
+  //           // Continue waiting for onsuccess or onerror
+  //         };
+  //       });
+  //     })
+  //   );
+  // }, [addMessage]);
 
   const handleResetAllCachedData = useCallback(async () => {
     // Close the prompt immediately when user clicks Reset
@@ -277,24 +247,14 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         addMessage({ message: { type: 'error', text: 'Cache Storage was not cleared', level: 'debug' } });
       }
 
-      // setResetProgress('cleared-caches');
-
-      // Update progress: cache storage cleared, now half-disabled
-      // setResetProgress('clearing-indexeddb');
-
-      // Clear IndexedDB databases (including workbox-expiration)
-      try {
-        await clearIndexedDBDatabases();
-        addMessage({ message: { type: 'success', text: 'IndexedDB cleared', level: 'debug' } });
-      } catch (indexedDBError) {
-        addMessage({ message: { type: 'error', text: `IndexedDB clearing error: ${indexedDBError}`, level: 'debug' } });
-        // Continue anyway - IndexedDB errors shouldn't block the reset
-      }
-
-      // setResetProgress('clearing-indexeddb');
-
-      // Update progress: IndexedDB cleared, now fully enabled
-      // setResetProgress('complete');
+      // // Clear IndexedDB databases (including workbox-expiration)
+      // try {
+      //   await clearIndexedDBDatabases();
+      //   addMessage({ message: { type: 'success', text: 'IndexedDB cleared', level: 'debug' } });
+      // } catch (indexedDBError) {
+      //   addMessage({ message: { type: 'error', text: `IndexedDB clearing error: ${indexedDBError}`, level: 'debug' } });
+      //   // Continue anyway - IndexedDB errors shouldn't block the reset
+      // }
 
       // Clear storage related to PWA installability
       sessionStorage.removeItem(STORAGE_KEY);
@@ -379,7 +339,7 @@ const ResetAllCachedDataButton: React.FC<ResetAllCachedDataButtonProps> = ({
         setClearingCache(false);
       }
     }
-  }, [checkServerAvailability, clearCacheStorage, clearIndexedDBDatabases, addMessage]);
+  }, [checkServerAvailability, clearCacheStorage, /*clearIndexedDBDatabases,*/ addMessage]);
 
   const handleDismiss = useCallback(() => {
     setShowResetCachePrompt(false);
