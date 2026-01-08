@@ -27,14 +27,12 @@ import {
 } from './constants';
 import { runtimeCachesConfig } from './runtimeCachesConfig';
 import { setupActivateHandler } from './activateHandler';
-import { setupMessageHandler } from './messageHandler';
-import { setupInstallHandler } from './installHandler';
+import { setupMessageHandler } from './messageHandler/index';
 
 declare const self: ServiceWorkerGlobalScope;
 
 setupActivateHandler();
 setupMessageHandler();
-// setupInstallHandler(); // TODO: delete if not helps on ios
 
 // Clean up old caches (with prefix workbox-precache) - runs on service worker activation.
 // It does not delete runtime caches
