@@ -34,7 +34,7 @@ declare const self: ServiceWorkerGlobalScope;
 
 setupActivateHandler();
 setupMessageHandler();
-setupInstallHandler(); // TODO: delete if not helps on ios
+// setupInstallHandler(); // TODO: delete if not helps on ios
 
 // Clean up old caches (with prefix workbox-precache) - runs on service worker activation.
 // It does not delete runtime caches
