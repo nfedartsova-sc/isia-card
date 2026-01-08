@@ -22,20 +22,19 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import {
   CACHE_VERSION,
   HOMEPAGE_HTML_URL, FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
-  PRECACHED_JS_FILES, DESTINATION_TYPE, IMAGE_API_ENDPOINTS,
+  PRECACHED_JS_FILES, DESTINATION_TYPE, ISIA_CARD_DATA_ENDPOINT, IMAGE_API_ENDPOINTS,
   NETWORK_TIMEOUT_SECONDS,
 } from './constants';
 import { runtimeCachesConfig } from './runtimeCachesConfig';
 import { setupActivateHandler } from './activateHandler';
 import { setupMessageHandler } from './messageHandler';
+import { setupInstallHandler } from './installHandler';
 
 declare const self: ServiceWorkerGlobalScope;
 
-// Set up activate event handler
 setupActivateHandler();
-
-// Set up message event handler
 setupMessageHandler();
+setupInstallHandler(); // TODO: delete if not helps on ios
 
 // Clean up old caches (with prefix workbox-precache) - runs on service worker activation.
 // It does not delete runtime caches
@@ -76,7 +75,23 @@ registerRoute(
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.pages.maxEntries,
         maxAgeSeconds: runtimeCachesConfig.pages.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
+        purgeOnQuotaError: runtimeCachesConfig.pages.purgeOnQuotaError,
+      }),
+    ],
+  })
+);
+
+// FONTS - Cache with CacheFirst strategy  
+registerRoute(
+  ({ request }) => request.destination === DESTINATION_TYPE.FONT,
+  new CacheFirst({
+    cacheName: runtimeCachesConfig.font.name,
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({
+        maxEntries: runtimeCachesConfig.font.maxEntries,
+        maxAgeSeconds: runtimeCachesConfig.font.maxAge,
+        purgeOnQuotaError: runtimeCachesConfig.font.purgeOnQuotaError,
       }),
     ],
   })
@@ -105,7 +120,10 @@ registerRoute(
     // Exclude precached files
     const isNotPrecached = !PRECACHED_JS_FILES.map(jsData => jsData.url).includes(url.pathname);
     
-    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached;
+    // Exclude fonts (they should be handled by the font route above)
+    const isNotFont = request.destination !== DESTINATION_TYPE.FONT;
+
+    return (isScriptOrStyle || isNextStaticAsset || isCSSFile || isJSFile) && isNotPrecached && isNotFont;
   },
   // Why cache first?
   // Since Next.js uses content hashing for static assets (files in /_next/static/ have hash-based
@@ -121,7 +139,7 @@ registerRoute(
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.static.maxEntries,
         maxAgeSeconds: runtimeCachesConfig.static.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
+        purgeOnQuotaError: runtimeCachesConfig.static.purgeOnQuotaError,
       }),
     ],
   })
@@ -139,7 +157,7 @@ registerRoute(
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.images.maxEntries,
         maxAgeSeconds: runtimeCachesConfig.images.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
+        purgeOnQuotaError: runtimeCachesConfig.images.purgeOnQuotaError,
       }),
     ],
   })
@@ -155,7 +173,7 @@ registerRoute(
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.images.maxEntries,
         maxAgeSeconds: runtimeCachesConfig.images.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
+        purgeOnQuotaError: runtimeCachesConfig.images.purgeOnQuotaError
       }),
     ],
     // Add matchOptions to handle URL variations
@@ -219,23 +237,7 @@ registerRoute(
       new ExpirationPlugin({
         maxEntries: runtimeCachesConfig.api.maxEntries,
         maxAgeSeconds: runtimeCachesConfig.api.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
-      }),
-    ],
-  })
-);
-
-// FONTS - Cache with CacheFirst strategy  
-registerRoute(
-  ({ request }) => request.destination === DESTINATION_TYPE.FONT,
-  new CacheFirst({
-    cacheName: runtimeCachesConfig.static.name,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({
-        maxEntries: runtimeCachesConfig.font.maxEntries,
-        maxAgeSeconds: runtimeCachesConfig.font.maxAge,
-        //purgeOnQuotaError: true, // Удалить при нехватке места
+        purgeOnQuotaError: runtimeCachesConfig.api.purgeOnQuotaError,
       }),
     ],
   })
@@ -644,7 +646,7 @@ setCatchHandler(async ({ request, url }): Promise<Response> => {
           
           // For card data API, return a more helpful error response instead of Response.error()
           // This allows the app to handle it more gracefully
-          if (url.pathname === '/api/isiaCardData') {
+          if (url.pathname === ISIA_CARD_DATA_ENDPOINT) {
             console.warn('[SW] Card data not available offline - no cached data found');
             return new Response(
               JSON.stringify({ 

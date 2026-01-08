@@ -5,8 +5,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import Loader from '@/components/Loader/index';
 import Checked from '@/components/Checked/index';
+import formatBytes from './formatBytes';
 
 import './styles.scss';
+
+const SW_MESSAGE_RECEIVE_TIMEOUT_MS = 15000;
 
 interface AppHealthCheckerProps {
   className?: string;
@@ -28,23 +31,31 @@ interface ApiCacheStatus {
   missingFields?: string[];
 }
 
+interface StorageEstimates {
+  quota?: number;
+  usage?: number;
+}
+
 const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
   className = '',
   style = {},
 }) => {
-    const [preCacheStatus, setPreCacheStatus] = useState<CacheStatus | null>(null);
-    const [apiCacheStatus, setApiCacheStatus] = useState<ApiCacheStatus | null>(null);
-    const [imagesCacheStatus, setImagesCacheStatus] = useState<CacheStatus | null>(null);
-    const [isCheckingPrecache, setIsCheckingPrecache] = useState(false);
-    const [isCheckingApiCache, setIsCheckingApiCache] = useState(false);
-    const [isCheckingImagesCache, setIsCheckingImagesCache] = useState(false);
-    const [isWaitingForSW, setIsWaitingForSW] = useState(true);
-    const [hasSentRequests, setHasSentRequests] = useState(false);
+  const [preCacheStatus, setPreCacheStatus] = useState<CacheStatus | null>(null);
+  const [apiCacheStatus, setApiCacheStatus] = useState<ApiCacheStatus | null>(null);
+  const [imagesCacheStatus, setImagesCacheStatus] = useState<CacheStatus | null>(null);
+  const [storageEstimates, setStorageEstimates] = useState<StorageEstimates | null>(null);
+  const [isCheckingPrecache, setIsCheckingPrecache] = useState(false);
+  const [isCheckingApiCache, setIsCheckingApiCache] = useState(false);
+  const [isCheckingImagesCache, setIsCheckingImagesCache] = useState(false);
+  const [isWaitingForSW, setIsWaitingForSW] = useState(true);
+  const [hasSentRequests, setHasSentRequests] = useState(false);
 
   const handleSWMessage = useCallback((event: MessageEvent) => {
-    if (event.data && event.data.type === SW_POST_MESSAGES.PRECACHE_STATUS) {
+    if (!event.data) return;
+
+    if (event.data.type === SW_POST_MESSAGES.PRECACHE_STATUS) {
       const { message, allCached, missingResources, cachedCount, totalCount } = event.data;
-      console.log('[AppHealthChecker] PRECACHE_STATUS received:', { allCached, cachedCount, totalCount });
+      console.log('[AppHealthChecker] PRECACHE_STATUS received:', { message, allCached, missingResources, cachedCount, totalCount });
       setPreCacheStatus({
         message,
         allCached,
@@ -56,9 +67,9 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       setIsWaitingForSW(false);
     }
 
-    if (event.data && event.data.type === SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS) {
+    if (event.data.type === SW_POST_MESSAGES.API_RUNTIME_CACHE_STATUS) {
       const { message, allCached, hasAllFields, missingFields } = event.data;
-      console.log('[AppHealthChecker] API_RUNTIME_CACHE_STATUS received:', { allCached, hasAllFields });
+      console.log('[AppHealthChecker] API_RUNTIME_CACHE_STATUS received:', { message, allCached, hasAllFields, missingFields });
       setApiCacheStatus({
         message,
         allCached,
@@ -69,22 +80,33 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       setIsWaitingForSW(false);
     }
 
-    if (event.data && event.data.type === SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
-        const { message, allCached, missingResources, cachedCount, totalCount } = event.data;
-        console.log('[AppHealthChecker] IMAGES_RUNTIME_CACHE_STATUS received:', { allCached, cachedCount, totalCount });
+    if (event.data.type === SW_POST_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS) {
+      const { message, allCached, missingResources, cachedCount, totalCount } = event.data;
+      console.log('[AppHealthChecker] IMAGES_RUNTIME_CACHE_STATUS received:', { message, allCached, missingResources, cachedCount, totalCount });
       setImagesCacheStatus({
-          message,
-          allCached,
-          missingResources,
-          cachedCount,
-          totalCount,
-        });
-        setIsCheckingImagesCache(!allCached);
-        setIsWaitingForSW(false);
-      }
+        message,
+        allCached,
+        missingResources,
+        cachedCount,
+        totalCount,
+      });
+      setIsCheckingImagesCache(!allCached);
+      setIsWaitingForSW(false);
+    }
   }, []);
 
+
   useEffect(() => {
+    // Getting storage estimates.
+    // navigator.storage.estimate() is origin-specific.
+    // It returns storage information only for the current origin.
+    navigator.storage.estimate().then(estimate => {
+      setStorageEstimates({
+        quota: estimate.quota,
+        usage: estimate.usage,
+      });
+    });
+
     if (!('serviceWorker' in navigator)) {
       setIsWaitingForSW(false);
       setHasSentRequests(false);
@@ -92,11 +114,15 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
     }
 
     let retryCount = 0;
-    const MAX_RETRIES = 20; // Increased retries
-    const RETRY_DELAY = 500;
+    const MAX_RETRIES = 20;
+    const RETRY_DELAY_MS = 500;
     let cleanupInterval: NodeJS.Timeout | null = null;
-    let hasInitialized = false;
-    let isCleanedUp = false;
+    let hasInitialized = false; // a guard flag that ensures cache status requests are sent only once
+                                // per useEffect run; it prevents duplicate messages to the service
+                                // worker
+    let isCleanedUp = false; // a cleanup flag that prevents async operations from running
+                             // after the component unmounts; it's a common React pattern
+                             // to avoid memory leaks and state updates on unmounted components
     let messageReceivedTimeout: NodeJS.Timeout | null = null;
 
     const setupMessageListener = () => {
@@ -104,200 +130,185 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
       console.log('[AppHealthChecker] Message listener attached');
     };
 
+    const startSendingRequestsToSW = () => {
+      hasInitialized = true;
+      setHasSentRequests(true);
+      setIsWaitingForSW(false);
+      setIsCheckingPrecache(true);
+      setIsCheckingApiCache(true);
+      setIsCheckingImagesCache(true);
+    };
+
+    const sendRequestsToSW = (swInstance: ServiceWorker | null) => {
+      if (!swInstance) return;
+      swInstance.postMessage({ 
+        type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS,
+      });
+      swInstance.postMessage({ 
+        type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS,
+      });
+      swInstance.postMessage({ 
+        type: SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS,
+      });
+    };
+
     const sendCacheStatusRequests = () => {
       // Only send requests once per effect run
       if (hasInitialized || isCleanedUp) return false;
       
+      // navigator.serviceWorker.controller is a reference to the active service worker
+      // that controls the current page. It's the primary way to communicate with the
+      // service worker from the page.
+      // Returns null if:
+      // - no service worker is controlling the page
+      // - the page was loaded with a hard refresh
+      // - the service worker hasn't activated yet
+      // - the page was opened in a new tab before the service worker activated
       const controller = navigator.serviceWorker.controller;
       if (controller) {
-        hasInitialized = true;
-        setHasSentRequests(true);
-        setIsWaitingForSW(false); // We have a controller, stop waiting
-        setIsCheckingPrecache(true);
-        setIsCheckingApiCache(true);
-        setIsCheckingImagesCache(true);
-        
+        startSendingRequestsToSW();
         console.log('[AppHealthChecker] Sending cache status requests via controller');
         console.log('[AppHealthChecker] Controller state:', controller.state);
-        
         try {
-          controller.postMessage({ 
-            type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS 
-          });
-          controller.postMessage({ 
-            type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS 
-          });
-          controller.postMessage({ 
-            type: SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS 
-          });
+          sendRequestsToSW(controller);
           console.log('[AppHealthChecker] Messages sent successfully');
         } catch (error) {
           console.error('[AppHealthChecker] Error sending messages:', error);
         }
-
-        // Set a timeout: if no messages received within 15 seconds, stop showing "Checking..."
+        // Set a timeout: if no messages received within timeout, stop showing "Checking..."
         messageReceivedTimeout = setTimeout(() => {
-            console.warn('[AppHealthChecker] No status messages received within 15 seconds');
+          console.warn(`[AppHealthChecker] No status messages received within ${SW_MESSAGE_RECEIVE_TIMEOUT_MS / 1000} seconds`);
           console.warn('[AppHealthChecker] Check service worker console for errors');
-        }, 15000);
-
+        }, SW_MESSAGE_RECEIVE_TIMEOUT_MS);
         return true; // Successfully sent
       }
       return false; // No controller available
     };
 
-    const sendViaRegistration = async (registration: ServiceWorkerRegistration) => {
-        if (hasInitialized || isCleanedUp) return false;
-        
-        // Try controller first
-        if (navigator.serviceWorker.controller) {
-          return sendCacheStatusRequests();
-        }
-        
-        // If no controller but we have an active service worker, use it
-        if (registration.active) {
-          hasInitialized = true;
-          setHasSentRequests(true);
-          setIsWaitingForSW(false);
-          setIsCheckingPrecache(true);
-          setIsCheckingApiCache(true);
-          setIsCheckingImagesCache(true);
-          
-          console.log('[AppHealthChecker] Sending cache status requests via registration.active');
-          console.log('[AppHealthChecker] Active state:', registration.active.state);
-          
-          try {
-            registration.active.postMessage({ 
-              type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS 
-            });
-            registration.active.postMessage({ 
-              type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS 
-            });
-            registration.active.postMessage({ 
-              type: SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS 
-            });
-            console.log('[AppHealthChecker] Messages sent via registration.active');
-          } catch (error) {
-            console.error('[AppHealthChecker] Error sending messages via registration:', error);
-          }
-          
-          messageReceivedTimeout = setTimeout(() => {
-            console.warn('[AppHealthChecker] No status messages received within 15 seconds');
-          }, 15000);
-          
-          return true;
-        }
-        
-        return false;
-      };
-
-      const waitForServiceWorker = async () => {
-        // Set up message listener immediately so we don't miss any messages
-        setupMessageListener();
-  
-        // First, try to get the controller immediately
-        if (sendCacheStatusRequests()) {
-          return; // Successfully sent requests
-        }
-  
-        // If no controller, wait for service worker registration to be ready
+    const sendViaRegistration = (registration: ServiceWorkerRegistration) => {
+      if (hasInitialized || isCleanedUp) return false;
+      
+      // Try controller first
+      if (navigator.serviceWorker.controller)
+        return sendCacheStatusRequests();
+      
+      // If no controller but we have an active service worker, use it
+      // (service worker may not be controlling this page yet)
+      if (registration.active) {
+        startSendingRequestsToSW();
+        console.log('[AppHealthChecker] Sending cache status requests via registration.active');
+        console.log('[AppHealthChecker] Active state:', registration.active.state);
         try {
-          const registration = await navigator.serviceWorker.ready;
-          console.log('[AppHealthChecker] Service worker ready, registration:', registration);
-          console.log('[AppHealthChecker] Controller:', navigator.serviceWorker.controller);
-          console.log('[AppHealthChecker] Active:', registration.active);
-          console.log('[AppHealthChecker] Waiting:', registration.waiting);
-          console.log('[AppHealthChecker] Installing:', registration.installing);
-          
-          // Try to send via registration
-          if (await sendViaRegistration(registration)) {
-            return; // Successfully sent requests
-          }
-          
-          // If still no controller and no active, wait a bit more
-          // Sometimes controller becomes available after ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Try controller again
-          if (sendCacheStatusRequests()) {
-            return;
-          }
-          
-          // Try registration again
-          if (await sendViaRegistration(registration)) {
-            return;
-          }
-          
-          // If service worker is waiting, it might need to activate
-          if (registration.waiting && !registration.active) {
-            console.log('[AppHealthChecker] Service worker is waiting, waiting for activation...');
-            // Wait for controllerchange event
-            const controllerChangePromise = new Promise<void>((resolve) => {
-              const handleControllerChange = () => {
-                navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
-                resolve();
-              };
-              navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
-              // Timeout after 5 seconds
-              setTimeout(() => {
-                navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
-                resolve();
-              }, 5000);
-            });
-            
-            await controllerChangePromise;
-            
-            // Try again after controller change
-            if (await sendCacheStatusRequests() || await sendViaRegistration(registration)) {
-              return;
-            }
-          }
+          sendRequestsToSW(registration.active);
+          console.log('[AppHealthChecker] Messages sent via registration.active');
         } catch (error) {
-          console.warn('[AppHealthChecker] Service worker registration error:', error);
+          console.error('[AppHealthChecker] Error sending messages via registration:', error);
         }
-  
-        // Retry logic if controller isn't available yet
-        cleanupInterval = setInterval(() => {
-          if (isCleanedUp) {
-            if (cleanupInterval) {
-              clearInterval(cleanupInterval);
-              cleanupInterval = null;
-            }
-            return;
-          }
-  
-          retryCount++;
+        messageReceivedTimeout = setTimeout(() => {
+          console.warn(`[AppHealthChecker] No status messages received within ${SW_MESSAGE_RECEIVE_TIMEOUT_MS / 1000} seconds`);
+        }, SW_MESSAGE_RECEIVE_TIMEOUT_MS);
+        return true;
+      }
+      return false;
+    };
+
+    const waitForServiceWorker = async () => {
+      // Set up message listener immediately so we don't miss any messages
+      setupMessageListener();
+
+      // First, try to get the controller immediately
+      if (sendCacheStatusRequests())
+        return; // Successfully sent requests
+
+      // If no controller, wait for service worker registration to be ready
+      try {
+        // registration = the active service worker for this origin
+        // (may not be controlling this page yet)
+        const registration = await navigator.serviceWorker.ready;
+        console.log('[AppHealthChecker] Service worker ready, registration:', registration);
+        console.log('[AppHealthChecker] Controller:', navigator.serviceWorker.controller);
+        console.log('[AppHealthChecker] Active:', registration.active);
+        console.log('[AppHealthChecker] Waiting:', registration.waiting);
+        console.log('[AppHealthChecker] Installing:', registration.installing);
+        
+        // Try to send via registration
+        if (sendViaRegistration(registration))
+          return; // Successfully sent requests
+        
+        // If still no controller and no active, wait a bit more.
+        // Sometimes controller becomes available after ready.
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Try controller again
+        if (sendCacheStatusRequests())
+          return;
+        
+        // Try registration again
+        if (sendViaRegistration(registration))
+          return;
+        
+        // If service worker is waiting, it might need to activate
+        if (registration.waiting && !registration.active) {
+          console.log('[AppHealthChecker] Service worker is waiting, waiting for activation...');
+
+          // Wait for controllerchange event
+          const controllerChangePromise = new Promise<void>((resolve) => {
+            const handleControllerChange = () => {
+              navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+              resolve();
+            };
+            navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+            // Timeout after 5 seconds
+            setTimeout(() => {
+              navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+              resolve();
+            }, 5000);
+          });
           
-          if (sendCacheStatusRequests()) {
-            // Successfully sent requests
-            if (cleanupInterval) {
-              clearInterval(cleanupInterval);
-              cleanupInterval = null;
-            }
-          } else if (retryCount >= MAX_RETRIES) {
-            // Give up after max retries
-            if (cleanupInterval) {
-              clearInterval(cleanupInterval);
-              cleanupInterval = null;
-            }
-            setIsWaitingForSW(false);
-            setHasSentRequests(false);
-            console.warn('[AppHealthChecker] Service worker controller not available after', MAX_RETRIES, 'retries');
-            console.warn('[AppHealthChecker] This might mean the service worker is not controlling this page');
+          await controllerChangePromise;
+          
+          // Try again after controller change
+          if (sendCacheStatusRequests() || sendViaRegistration(registration))
+            return;
+        }
+      } catch (error) {
+        console.warn('[AppHealthChecker] Service worker registration error:', error);
+      }
+
+      // Retry logic if controller isn't available yet
+      cleanupInterval = setInterval(() => {
+        if (isCleanedUp) {
+          if (cleanupInterval) {
+            clearInterval(cleanupInterval);
+            cleanupInterval = null;
           }
-        }, RETRY_DELAY);
-      };
+          return;
+        }
+
+        retryCount++;
+        
+        if (sendCacheStatusRequests()) {
+          // Successfully sent requests
+          if (cleanupInterval) {
+            clearInterval(cleanupInterval);
+            cleanupInterval = null;
+          }
+        } else if (retryCount >= MAX_RETRIES) {
+          // Give up after max retries
+          if (cleanupInterval) {
+            clearInterval(cleanupInterval);
+            cleanupInterval = null;
+          }
+          setIsWaitingForSW(false);
+          setHasSentRequests(false);
+          console.warn('[AppHealthChecker] Service worker controller not available after', MAX_RETRIES, 'retries');
+          console.warn('[AppHealthChecker] This might mean the service worker is not controlling this page');
+        }
+      }, RETRY_DELAY_MS);
+    };
 
     // Start waiting for service worker
     waitForServiceWorker();
-
-    // // Timeout to stop waiting if no messages received after reasonable time
-    // // But don't stop if we're still retrying
-    // const timeoutId = setTimeout(() => {
-    //   if (!hasInitialized && retryCount >= MAX_RETRIES) {
-    //     setIsWaitingForSW(false);
-    //   }
-    // }, 15000); // 15 seconds timeout (longer than max retries)
 
     return () => {
       isCleanedUp = true;
@@ -313,53 +324,23 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
     };
   }, [handleSWMessage]);
 
-//   useEffect(() => {
-//     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-//       // Listen for cache status updates from service worker
-//       navigator.serviceWorker.addEventListener('message', handleSWMessage);
 
-//       // Send initial cache status requests on mount
-//       const sendCacheStatusRequests = () => {
-//         if (navigator.serviceWorker.controller) {
-//           setIsCheckingPrecache(true);
-//           setIsCheckingApiCache(true);
-//           setIsCheckingImagesCache(true);
-//           navigator.serviceWorker.controller.postMessage({ 
-//             type: SW_RECEIVE_MESSAGES.PRECACHE_STATUS 
-//           });
-//           navigator.serviceWorker.controller.postMessage({ 
-//             type: SW_RECEIVE_MESSAGES.API_RUNTIME_CACHE_STATUS 
-//           });
-//           navigator.serviceWorker.controller.postMessage({ 
-//             type: SW_RECEIVE_MESSAGES.IMAGES_RUNTIME_CACHE_STATUS 
-//           });
-//         }
-//       };
+  const AppHealthStatusTitle = () => <div className="title"><b>Your app health status:</b></div>;
 
-//       // Wait a bit for service worker to be ready
-//       const timeoutId = setTimeout(sendCacheStatusRequests, 500);
-
-//       return () => {
-//         clearTimeout(timeoutId);
-//         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
-//       };
-//     }
-//   }, [handleSWMessage]);
-
-  // Don't render if no status or if all resources are cached
-//   if (!status || (status.allCached && !isChecking)) {
-//     return null;
-//   }
-
-   // Update render condition to show statuses even if we're still waiting for some
-  // Show loading only if we're waiting for SW OR if we've sent requests but have NO statuses at all
+  // Show loading if:
+  // 1. We're waiting for service worker, OR
+  // 2. We've sent requests but haven't received status or storage estimates yet
   const hasAnyStatus = preCacheStatus || apiCacheStatus || imagesCacheStatus;
+
+  const shouldShowLoading = 
+    isWaitingForSW || 
+    (!storageEstimates && !hasAnyStatus && hasSentRequests);
   
-  if ((isWaitingForSW || (!hasAnyStatus && hasSentRequests)) && !hasAnyStatus) {
+  if (shouldShowLoading) {
     return (
       <div className={`app-health-checker ${className}`} style={style}>
         <div className="health-check-container">
-          <div className="title"><b>Your app health status:</b></div>
+          <AppHealthStatusTitle />
           <div className="health-status-item">
             <Loader />
             <div className="health-status-message">
@@ -371,129 +352,164 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
     );
   }
 
-   // If we have at least one status, show it
-   if (hasAnyStatus) {
+  // If we have at least one status or storage estimes, show them
+  if (storageEstimates || hasAnyStatus) {
     return (
       <div className="health-check-container">
-        <div className="title"><b>Your app health status:</b></div>
+        <AppHealthStatusTitle />
+
         <div className={`app-health-checker ${className}`} style={style}>
-        {preCacheStatus && (
-          <div className="health-status-item">
-            {
-              isCheckingPrecache
-                ? (
+          {/* Storage estimates */}
+          {storageEstimates && (
+            <div className="health-status-item">
+              {(() => {
+                const usagePercent = storageEstimates.quota && storageEstimates.usage
+                  ? (storageEstimates.usage / storageEstimates.quota) * 100
+                  : null;
+                
+                const checkStatus = usagePercent !== null
+                  ? usagePercent < 60
+                    ? 'success'
+                    : usagePercent < 90
+                      ? 'warning'
+                      : 'error'
+                  : undefined;
+                
+                return (
                   <>
-                    <Loader />
+                    {checkStatus && (
+                      <Checked checkStatus={checkStatus} />
+                    )}
                     <div className="health-status-message">
-                      {preCacheStatus.message}
-                    </div>
-                  </>
-                )
-                : (
-                  <>
-                    <Checked
-                      checkStatus={
-                        !preCacheStatus.missingResources || !preCacheStatus.missingResources.length
-                          ? 'success'
-                          : preCacheStatus.totalCount && preCacheStatus.missingResources.length < preCacheStatus.totalCount
-                            ? 'warning'
-                            : 'error'
-                      }
-                    />
-                    <div className="health-status-message">
-                      {preCacheStatus.message}
-                      {preCacheStatus.cachedCount !== undefined && preCacheStatus.totalCount !== undefined && (
+                      Storage: {formatBytes(storageEstimates.usage)} / {formatBytes(storageEstimates.quota)}
+                      {usagePercent !== null && (
                         <span className="health-status-progress">
-                          {' '}({preCacheStatus.cachedCount}/{preCacheStatus.totalCount})
+                          {' '}({Math.round(usagePercent)}% used)
                         </span>
                       )}
                     </div>
                   </>
-                )
-            }
-          </div>
-        )}
+                );
+              })()}
+            </div>
+          )}
 
-        {apiCacheStatus && (
-          <div className="health-status-item">
-            {
-              isCheckingApiCache
-                ? (
-                  <>
-                    <Loader />
-                    <div className="health-status-message">
-                      {apiCacheStatus.message}
-                    </div>
-                  </>
-                )
-                : (
-                  <>
-                    <Checked
-                      checkStatus={
-                        apiCacheStatus.allCached && apiCacheStatus.hasAllFields
-                          ? 'success'
-                          : apiCacheStatus.allCached && !apiCacheStatus.hasAllFields
-                            ? 'warning'
-                            : 'error'
-                      }
-                    />
-                    <div className="health-status-message">
-                      {apiCacheStatus.message}
-                    </div>
-                  </>
-                )
-            }
-          </div>
-        )}
+          {preCacheStatus && (
+            <div className="health-status-item">
+              {
+                isCheckingPrecache
+                  ? (
+                    <>
+                      <Loader />
+                      <div className="health-status-message">
+                        {preCacheStatus.message}
+                      </div>
+                    </>
+                  )
+                  : (
+                    <>
+                      <Checked
+                        checkStatus={
+                          !preCacheStatus.missingResources || !preCacheStatus.missingResources.length
+                            ? 'success'
+                            : preCacheStatus.totalCount && preCacheStatus.missingResources.length < preCacheStatus.totalCount
+                              ? 'warning'
+                              : 'error'
+                        }
+                      />
+                      <div className="health-status-message">
+                        {preCacheStatus.message}
+                        {preCacheStatus.cachedCount !== undefined && preCacheStatus.totalCount !== undefined && (
+                          <span className="health-status-progress">
+                            {' '}({preCacheStatus.cachedCount}/{preCacheStatus.totalCount})
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )
+              }
+            </div>
+          )}
 
-        {/* Images cache status */}
-        {imagesCacheStatus && (
-          <div className="health-status-item">
-            {
-              isCheckingImagesCache
-                ? (
-                  <>
-                    <Loader />
-                    <div className="health-status-message">
-                      {imagesCacheStatus.message}
-                    </div>
-                  </>
-                )
-                : (
-                  <>
-                    <Checked
-                      checkStatus={
-                        !imagesCacheStatus.missingResources || !imagesCacheStatus.missingResources.length
-                          ? 'success'
-                          : imagesCacheStatus.totalCount && imagesCacheStatus.missingResources.length < imagesCacheStatus.totalCount
-                            ? 'warning'
-                            : 'error'
-                      }
-                    />
-                    <div className="health-status-message">
-                      {imagesCacheStatus.message}
-                      {imagesCacheStatus.cachedCount !== undefined && imagesCacheStatus.totalCount !== undefined && (
-                        <span className="health-status-progress">
-                          {' '}({imagesCacheStatus.cachedCount}/{imagesCacheStatus.totalCount})
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )
-            }
-          </div>
-        )}
+          {apiCacheStatus && (
+            <div className="health-status-item">
+              {
+                isCheckingApiCache
+                  ? (
+                    <>
+                      <Loader />
+                      <div className="health-status-message">
+                        {apiCacheStatus.message}
+                      </div>
+                    </>
+                  )
+                  : (
+                    <>
+                      <Checked
+                        checkStatus={
+                          apiCacheStatus.allCached && apiCacheStatus.hasAllFields
+                            ? 'success'
+                            : apiCacheStatus.allCached && !apiCacheStatus.hasAllFields
+                              ? 'warning'
+                              : 'error'
+                        }
+                      />
+                      <div className="health-status-message">
+                        {apiCacheStatus.message}
+                      </div>
+                    </>
+                  )
+              }
+            </div>
+          )}
+
+          {/* Images cache status */}
+          {imagesCacheStatus && (
+            <div className="health-status-item">
+              {
+                isCheckingImagesCache
+                  ? (
+                    <>
+                      <Loader />
+                      <div className="health-status-message">
+                        {imagesCacheStatus.message}
+                      </div>
+                    </>
+                  )
+                  : (
+                    <>
+                      <Checked
+                        checkStatus={
+                          !imagesCacheStatus.missingResources || !imagesCacheStatus.missingResources.length
+                            ? 'success'
+                            : imagesCacheStatus.totalCount && imagesCacheStatus.missingResources.length < imagesCacheStatus.totalCount
+                              ? 'warning'
+                              : 'error'
+                        }
+                      />
+                      <div className="health-status-message">
+                        {imagesCacheStatus.message}
+                        {imagesCacheStatus.cachedCount !== undefined && imagesCacheStatus.totalCount !== undefined && (
+                          <span className="health-status-progress">
+                            {' '}({imagesCacheStatus.cachedCount}/{imagesCacheStatus.totalCount})
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )
+              }
+            </div>
+          )}
+        </div>
       </div>
+    );
+  }
 
-    </div>
-  );
-}
-
-// Fallback: initial state
-return (
+  // Fallback: initial state
+  return (
     <div className={`app-health-checker ${className}`} style={style}>
       <div className="health-check-container">
-        <div className="title"><b>Your app health status:</b></div>
+        <AppHealthStatusTitle />
         <div className="health-status-item">
           <Loader />
           <div className="health-status-message">

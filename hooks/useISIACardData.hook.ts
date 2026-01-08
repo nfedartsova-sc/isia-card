@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { ISIACardResponseData } from '@/api/isiaCardData/route';
-
-export const ISIA_CARD_DATA_ENDPOINT = '/api/isiaCardData';
+import { ISIA_CARD_DATA_ENDPOINT } from '@/src/constants';
 
 function useISIACardData() {
   const [cardData, setCardData] = useState<ISIACardResponseData | null>(null);

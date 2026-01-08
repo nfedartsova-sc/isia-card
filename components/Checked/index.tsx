@@ -10,12 +10,7 @@ const Checked: React.FC<CheckedProps> = ({
   checkStatus = 'success',
 }) => {
   return (
-    <div>
-      <label className="container">
-        <input type="checkbox" defaultChecked={true} />
-        <div className={`checkmark-${checkStatus}`}></div>
-      </label>
-    </div>
+    <div className={`checkmark checkmark-${checkStatus}`}></div>
   );
 };
 

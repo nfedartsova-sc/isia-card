@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Prompt from '../Prompt/index';
 import useNavigatorOnlineStatus  from '@/hooks/useNavigatorOnlineStatus.hook';
 import { STORAGE_KEY } from '@/hooks/usePWAInstall.hook';
-import { ISIA_CARD_DATA_ENDPOINT } from '@/hooks/useISIACardData.hook';
+import { ISIA_CARD_DATA_ENDPOINT } from '@/src/constants';
 import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import { useMessages } from '@/contexts/MessageContext';
 import { HOMEPAGE_HTML_URL, PRECACHED_IMAGES, PRECACHED_JS_FILES, IMAGE_API_ENDPOINTS } from '@/src/constants';

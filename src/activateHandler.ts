@@ -1,11 +1,11 @@
 /// <reference lib="webworker" />
 
 import { runtimeCachesConfig } from './runtimeCachesConfig';
-// import { cacheNames } from 'workbox-core';
 import {
   CLEAR_ORPHANED_INDEXEDDB_ATTEMPTS_NUMBER,
   CLEAR_ORPHANED_INDEXEDDB_WAIT_INTERVAL_BETWEEN_ATTEMPS_MS,
 } from './constants';
+import { isRuntimeCache } from './runtimeCachesConfig';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -14,11 +14,10 @@ declare const self: ServiceWorkerGlobalScope;
  * Handles cleanup of old caches and orphaned IndexedDB databases.
  */
 export function setupActivateHandler() {
-  // Deleting OLD RUNTIME caches on service worker activation
   self.addEventListener('activate', (event) => {
     event.waitUntil(
       Promise.all([
-        // 1. Clean old runtime caches - IMPROVED VERSION
+        // 1. Clean old runtime caches
         (async () => {
           const cacheNamesList = await caches.keys();
           const validCacheNames = Object.values(runtimeCachesConfig).map(c => c.name);
@@ -29,15 +28,10 @@ export function setupActivateHandler() {
           // Find all runtime caches that are NOT in the current valid list
           const cachesToDelete = cacheNamesList.filter(cacheName => {
             // Match runtime caches (pages, static, images, api, font)
-            const isRuntimeCache = 
-              cacheName.includes('pages-runtime-') ||
-              cacheName.includes('static-runtime-') ||
-              cacheName.includes('images-runtime-') ||
-              cacheName.includes('api-runtime-') ||
-              cacheName.includes('font-runtime-');
+            const ifRuntimeCache = isRuntimeCache(cacheName);
             
             // Delete if it's a runtime cache but not in the current valid list
-            return isRuntimeCache && !validCacheNames.includes(cacheName);
+            return ifRuntimeCache && !validCacheNames.includes(cacheName);
           });
           
           console.log('[SW] Caches to delete:', cachesToDelete);
@@ -111,6 +105,8 @@ export function setupActivateHandler() {
             })
           );
         }),*/
+
+
         // 3. Clean orphaned IndexedDB (workbox-expiration databases)
         (async () => {
           if (typeof indexedDB === 'undefined' || !indexedDB.databases)
