@@ -5,7 +5,10 @@ declare const self: ServiceWorkerGlobalScope;
 /**
  * Helper function to send message to client(s)
  */
-const sendToClients = async (eventSource: MessagePort | Client | ServiceWorker | null, message: any) => {
+const sendToClients = async (
+  eventSource: MessagePort | Client | ServiceWorker | null,
+  message: any
+) => {
   // First, try to send directly to the source if available
   if (eventSource && 'postMessage' in eventSource) {
     try {
