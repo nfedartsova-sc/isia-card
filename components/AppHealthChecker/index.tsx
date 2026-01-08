@@ -6,6 +6,7 @@ import { SW_POST_MESSAGES, SW_RECEIVE_MESSAGES } from '@/types/sw-messages';
 import Loader from '@/components/Loader/index';
 import Checked from '@/components/Checked/index';
 import formatBytes from './formatBytes';
+import { CACHE_VERSION } from '@/src/constants';
 
 import './styles.scss';
 
@@ -325,7 +326,16 @@ const AppHealthChecker: React.FC<AppHealthCheckerProps> = ({
   }, [handleSWMessage]);
 
 
-  const AppHealthStatusTitle = () => <div className="title"><b>Your app health status:</b></div>;
+  const AppHealthStatusTitle = () => (
+    <>
+      <div className="title">
+        <b>Your app health status:</b>
+      </div>
+      <div className="subtitle">
+        Cache Version: {CACHE_VERSION}
+      </div>
+    </>
+  );
 
   // Show loading if:
   // 1. We're waiting for service worker, OR

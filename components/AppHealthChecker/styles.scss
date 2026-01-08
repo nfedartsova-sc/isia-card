@@ -1,5 +1,9 @@
 @use "tailwindcss";
 
+.subtitle {
+  @apply text-sm;
+}
+
 .health-check-container {
   @apply w-full;
   @apply flex flex-col flex-nowrap gap-2;
