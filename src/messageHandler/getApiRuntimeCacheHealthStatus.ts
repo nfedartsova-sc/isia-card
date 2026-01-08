@@ -49,6 +49,9 @@ const getApiRuntimeCacheHealthStatus = async (eventSource: MessagePort | Client 
       }
 
       const apiCache = await caches.open(apiCacheName);
+
+      // Get all cached keys for comprehensive matching (iOS compatibility)
+      const cacheKeys = await apiCache.keys();
       
       // Try to find the cached response for /api/isiaCardData
       const apiUrl = new URL(API_ENDPOINT, self.location.href).href;
@@ -64,12 +67,64 @@ const getApiRuntimeCacheHealthStatus = async (eventSource: MessagePort | Client 
         await apiCache.match(apiUrl, { ignoreSearch: true }),
       ];
 
-      const cachedResponse = matchResults.find((response): response is Response => response !== undefined);
+      let cachedResponse = matchResults.find((response): response is Response => response !== undefined);
       
-      if (!cachedResponse) {
+      /*if (!cachedResponse) {
         // Check if cache has any entries - if it does, the endpoint just isn't cached yet
         const cacheKeys = await apiCache.keys();
         if (cacheKeys.length > 0) {
+          return {
+            allCached: false,
+            hasAllFields: false,
+            missingFields: REQUIRED_FIELDS,
+            message: 'API endpoint not cached - may need to be requested first',
+          };
+        } else {
+          return {
+            allCached: false,
+            hasAllFields: false,
+            missingFields: REQUIRED_FIELDS,
+            message: 'API cache is empty - endpoint may not have been requested yet',
+          };
+        }
+      }*/
+
+      // If not found, try matching by pathname against all cached keys (iOS compatibility)
+      if (!cachedResponse && cacheKeys.length > 0) {
+        for (const cachedRequest of cacheKeys) {
+          try {
+            const cachedUrl = new URL(cachedRequest.url);
+            const cachedPathname = cachedUrl.pathname;
+            
+            // Match by pathname (most reliable for iOS)
+            if (cachedPathname === apiPathname) {
+              const match = await apiCache.match(cachedRequest);
+              if (match) {
+                cachedResponse = match;
+                console.log(`[SW] Found API cache by pathname match: ${cachedRequest.url} -> ${apiPathname}`);
+                break;
+              }
+            }
+          } catch (urlError) {
+            // Skip invalid URLs
+            continue;
+          }
+        }
+      }
+    
+      if (!cachedResponse) {
+        // Check if cache has any entries - if it does, the endpoint just isn't cached yet
+        if (cacheKeys.length > 0) {
+          // Log what we found for debugging
+          console.log(`[SW] API cache has ${cacheKeys.length} entries but endpoint not found. Cached URLs:`, 
+            cacheKeys.map(r => {
+              try {
+                return new URL(r.url).pathname;
+              } catch {
+                return r.url;
+              }
+            })
+          );
           return {
             allCached: false,
             hasAllFields: false,

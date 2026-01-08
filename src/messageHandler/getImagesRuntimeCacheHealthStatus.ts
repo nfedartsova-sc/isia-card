@@ -91,7 +91,7 @@ const getImagesRuntimeCacheHealthStatus = async (eventSource: MessagePort | Clie
                 const cachedPathname = cachedUrl.pathname;
                 
                 // Match by pathname (most reliable)
-                if (cachedPathname === imagePathname) {
+                /*if (cachedPathname === imagePathname) {
                   isCached = true;
                   break;
                 }
@@ -102,6 +102,17 @@ const getImagesRuntimeCacheHealthStatus = async (eventSource: MessagePort | Clie
                   // Check if this cached request's pathname matches what we're looking for
                   if (cachedPathname === imagePathname) {
                     isCached = true;
+                    break;
+                  }
+                }*/
+
+                // Match by pathname (most reliable for iOS)
+                if (cachedPathname === imagePathname) {
+                  // Verify the match actually works
+                  const verifiedMatch = await imagesCache.match(cachedRequest);
+                  if (verifiedMatch) {
+                    isCached = true;
+                    console.log(`[SW] Found image cache by pathname match: ${cachedRequest.url} -> ${imagePathname}`);
                     break;
                   }
                 }
