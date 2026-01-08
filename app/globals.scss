@@ -59,37 +59,14 @@ body {
 }
 
 .error {
- color: $error; 
+  color: $error; 
 }
 
 @mixin disabled-btn-styles {
-  cursor: default !important;
-  color: $disabled !important;
-  pointer-events: none !important;
-
-  // Rainbow background effect - must override white background
-  background: linear-gradient(
-    90deg,
-    #f4f6f7 0%,
-    #e8ecf0 33.33%,
-    #d4dae3 66.66%,
-    #f4f6f7 100%
-  ) !important;
-  background-size: 200% 100% !important;
-  animation: rainbow-slide 3s linear infinite !important;
-  
-  // Override any hover/active states
-  &:hover, &:focus, &:active {
-    background: linear-gradient(
-      90deg,
-      #f4f6f7 0%,
-      #e8ecf0 33.33%,
-      #d4dae3 66.66%,
-      #f4f6f7 100%
-    ) !important;
-    background-size: 200% 100% !important;
-    color: $disabled !important;
-  }
+  @apply bg-gray-100 cursor-not-allowed opacity-50;
+  color: $disabled;
+  border-color: $disabled;
+  pointer-events: none;
 }
 
 .btn {
@@ -157,14 +134,5 @@ body {
   &:disabled,
   &.disabled {
     @include disabled-btn-styles;
-  }
-}
-
-@keyframes rainbow-slide {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
   }
 }
