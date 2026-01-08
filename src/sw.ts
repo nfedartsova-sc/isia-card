@@ -20,8 +20,8 @@ import { NetworkFirst, CacheFirst, NetworkOnly, StrategyHandler } from 'workbox-
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import {
-  CACHE_VERSION,
-  HOMEPAGE_HTML_URL, FALLBACK_HTML_URL, FALLBACK_IMG, PRECACHED_IMAGES,
+  PRECACHE_RESOURCES,
+  HOMEPAGE_HTML_URL, FALLBACK_HTML_URL, FALLBACK_IMG,
   PRECACHED_JS_FILES, DESTINATION_TYPE, ISIA_CARD_DATA_ENDPOINT, IMAGE_API_ENDPOINTS,
   NETWORK_TIMEOUT_SECONDS,
 } from './constants';
@@ -41,18 +41,7 @@ cleanupOutdatedCaches();
 // Precache resources with routing.
 // Caching files in 'install' event handler of service-worker.
 // 'revision: null' means that Workbox uses content hash - e.i. only updates if file changes.
-precacheAndRoute([
-  { url: HOMEPAGE_HTML_URL, revision: `main-${CACHE_VERSION}` },
-  { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
-  ...PRECACHED_IMAGES.map((imgData) => ({
-    url: imgData.url,
-    revision: null,
-  })),
-  ...PRECACHED_JS_FILES.map((jsData) => ({
-    url: jsData.url,
-    revision: jsData.revision || null,
-  })),
-], {
+precacheAndRoute(PRECACHE_RESOURCES, {
   // Ignore all URL parameters
   ignoreURLParametersMatching: [/.*/],
 });

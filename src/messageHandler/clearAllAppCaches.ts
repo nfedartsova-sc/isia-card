@@ -3,16 +3,51 @@
 import { SW_POST_MESSAGES } from '@/types/sw-messages';
 import { cacheNames } from 'workbox-core';
 import {
-  CACHE_VERSION,
-  HOMEPAGE_HTML_URL,
-  FALLBACK_HTML_URL,
-  PRECACHED_IMAGES,
-  PRECACHED_JS_FILES,
+  WB_REVISION_PARAM,
+  // PRECACHED_IMAGES,
+  PRECACHE_RESOURCES,
 } from '../constants';
-import { runtimeCachesConfig } from '../runtimeCachesConfig';
+// import { runtimeCachesConfig } from '../runtimeCachesConfig';
 import sendToClients from './sendToClients';
 
 declare const self: ServiceWorkerGlobalScope;
+
+/**
+ * Helper function to delete a cache with retry logic
+ */
+const deleteCacheWithRetry = async (
+  cacheName: string,
+  maxAttempts: number = 3,
+  retryDelayMs: number = 100
+): Promise<{ cacheName: string; success: boolean; error?: any }> => {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const deleted = await caches.delete(cacheName);
+      if (deleted) {
+        console.log(`[SW] Cache "${cacheName}" deleted successfully`);
+        return { cacheName, success: true };
+      }
+      // Deletion returned false (cache didn't exist or couldn't be deleted)
+      if (attempt < maxAttempts - 1) {
+        console.warn(`[SW] Cache "${cacheName}" deletion failed (attempt ${attempt + 1}/${maxAttempts}), retrying...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      } else {
+        console.error(`[SW] Cache "${cacheName}" deletion failed after ${maxAttempts} attempts`);
+        return { cacheName, success: false, error: 'Deletion returned false' };
+      }
+    } catch (error) {
+      if (attempt < maxAttempts - 1) {
+        console.warn(`[SW] Cache "${cacheName}" deletion error (attempt ${attempt + 1}/${maxAttempts}):`, error);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      } else {
+        console.error(`[SW] Cache "${cacheName}" deletion error after ${maxAttempts} attempts:`, error);
+        return { cacheName, success: false, error };
+      }
+    }
+  }
+  return { cacheName, success: false, error: 'Max attempts reached' };
+};
+
 
 /**
  * Clear ALL app caches - both runtime and precache
@@ -28,41 +63,6 @@ const clearAllAppCaches = async (eventSource: MessagePort | Client | ServiceWork
       await sendToClients(eventSource, { type: SW_POST_MESSAGES.CACHES_CLEARED });
       return;
     }
-
-    // Helper function to delete a cache with retry logic
-    const deleteCacheWithRetry = async (
-      cacheName: string,
-      maxAttempts: number = 3,
-      retryDelayMs: number = 100
-    ): Promise<{ cacheName: string; success: boolean; error?: any }> => {
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-          const deleted = await caches.delete(cacheName);
-          if (deleted) {
-            console.log(`[SW] Cache "${cacheName}" deleted successfully`);
-            return { cacheName, success: true };
-          }
-          
-          // Deletion returned false (cache didn't exist or couldn't be deleted)
-          if (attempt < maxAttempts - 1) {
-            console.warn(`[SW] Cache "${cacheName}" deletion failed (attempt ${attempt + 1}/${maxAttempts}), retrying...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-          } else {
-            console.error(`[SW] Cache "${cacheName}" deletion failed after ${maxAttempts} attempts`);
-            return { cacheName, success: false, error: 'Deletion returned false' };
-          }
-        } catch (error) {
-          if (attempt < maxAttempts - 1) {
-            console.warn(`[SW] Cache "${cacheName}" deletion error (attempt ${attempt + 1}/${maxAttempts}):`, error);
-            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-          } else {
-            console.error(`[SW] Cache "${cacheName}" deletion error after ${maxAttempts} attempts:`, error);
-            return { cacheName, success: false, error };
-          }
-        }
-      }
-      return { cacheName, success: false, error: 'Max attempts reached' };
-    };
 
     // Delete all caches in parallel with retry logic
     const deleteResults = await Promise.allSettled(
@@ -115,9 +115,9 @@ const clearAllAppCaches = async (eventSource: MessagePort | Client | ServiceWork
       console.log('[SW] All caches successfully deleted');
     }
 
-    // Repopulate critical precached resources in runtime cache
-    // This ensures they're available offline even after clearing precache
-    try {
+    // Repopulate critical precached resources in runtime cache.
+    // This ensures they're available offline even after clearing precache.
+    /*try {
       const imagesCache = await caches.open(runtimeCachesConfig.images.name);
       
       console.log('[SW] Repopulating precached images in runtime cache...');
@@ -147,32 +147,19 @@ const clearAllAppCaches = async (eventSource: MessagePort | Client | ServiceWork
     } catch (error) {
       console.error('[SW] Error repopulating precached images:', error);
       // Continue anyway - this is best effort
-    }
+    }*/
 
-    // AFTER clearing caches, manually repopulate precache
+    // AFTER clearing caches, manually repopulate precache.
     // This is necessary because precacheAndRoute only runs during install event,
     // and registration.update() won't trigger reinstall if file hasn't changed
     try {
       console.log('[SW] Manually repopulating precache...');
-      
-      const precacheResources = [
-        { url: HOMEPAGE_HTML_URL, revision: `main-${CACHE_VERSION}` },
-        { url: FALLBACK_HTML_URL, revision: `offline-${CACHE_VERSION}` },
-        ...PRECACHED_IMAGES.map((imgData) => ({
-          url: imgData.url,
-          revision: null,
-        })),
-        ...PRECACHED_JS_FILES.map((jsData) => ({
-          url: jsData.url,
-          revision: jsData.revision || null,
-        })),
-      ];
 
       // Open precache and manually cache each resource
       const precacheCache = await caches.open(cacheNames.precache);
       
       const precacheResults = await Promise.allSettled(
-        precacheResources.map(async (resource) => {
+        PRECACHE_RESOURCES.map(async (resource) => {
           try {
             const response = await fetch(resource.url);
             if (response.ok) {
@@ -180,7 +167,7 @@ const clearAllAppCaches = async (eventSource: MessagePort | Client | ServiceWork
               let cacheKey: string;
               if (resource.revision) {
                 const url = new URL(resource.url, self.location.href);
-                url.searchParams.set('__WB_REVISION__', resource.revision);
+                url.searchParams.set(WB_REVISION_PARAM, resource.revision);
                 cacheKey = url.href;
               } else {
                 cacheKey = new URL(resource.url, self.location.href).href;
@@ -203,7 +190,7 @@ const clearAllAppCaches = async (eventSource: MessagePort | Client | ServiceWork
       const successfulPrecaches = precacheResults.filter(
         r => r.status === 'fulfilled' && r.value.success
       ).length;
-      console.log(`[SW] Repopulated ${successfulPrecaches}/${precacheResources.length} resources in precache`);
+      console.log(`[SW] Repopulated ${successfulPrecaches}/${PRECACHE_RESOURCES.length} resources in precache`);
     } catch (error) {
       console.error('[SW] Error manually repopulating precache:', error);
       // Continue anyway - this is best effort
